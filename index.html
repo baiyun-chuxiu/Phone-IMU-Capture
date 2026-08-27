@@ -1,0 +1,1053 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Phone IMU Live Stream</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Helvetica Neue', Arial, sans-serif;
+            background: #08080f;
+            color: #f0f0f5;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* Header */
+        .header {
+            background: rgba(18, 18, 32, 0.85);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            padding: 14px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .header h1 {
+            font-size: 1.1rem;
+            font-weight: 700;
+            letter-spacing: -0.3px;
+            background: linear-gradient(90deg, #00d2ff 0%, #9d4edd 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .status-dot-wrap {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.75rem;
+            color: #8e8ea0;
+            background: rgba(255, 255, 255, 0.04);
+            padding: 3px 8px;
+            border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        .dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: #666;
+            transition: all 0.3s;
+        }
+
+        .dot.connected {
+            background: #00d264;
+            box-shadow: 0 0 10px rgba(0, 210, 100, 0.6);
+        }
+
+        .dot.recording {
+            background: #ff4444;
+            box-shadow: 0 0 10px rgba(255, 68, 68, 0.8);
+            animation: blink 0.8s infinite;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        /* Controls */
+        .controls {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn {
+            padding: 7px 14px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.82rem;
+            font-weight: 600;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            text-decoration: none;
+            outline: none;
+            white-space: nowrap;
+        }
+
+        .btn:hover { transform: translateY(-1px); filter: brightness(1.1); }
+        .btn:active { transform: translateY(0); }
+        .btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none; filter: none; }
+
+        .btn-primary { background: linear-gradient(135deg, #00b4db, #0083b0); color: #fff; }
+        .btn-danger { background: linear-gradient(135deg, #ff416c, #ff4b2b); color: #fff; }
+        .btn-success { background: linear-gradient(135deg, #11998e, #38ef7d); color: #fff; }
+        .btn-secondary { background: rgba(255, 255, 255, 0.07); color: #ccc; border: 1px solid rgba(255, 255, 255, 0.08); }
+        .btn-secondary:hover { background: rgba(255, 255, 255, 0.12); color: #fff; }
+
+        /* Container */
+        .container {
+            max-width: 1440px;
+            margin: 0 auto;
+            padding: 16px;
+        }
+
+        /* Stats Bar */
+        .stats-bar {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+            gap: 10px;
+            background: #111120;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 12px;
+            padding: 12px 14px;
+            margin-bottom: 16px;
+        }
+
+        .stat-box { text-align: center; }
+        .stat-label { font-size: 0.68rem; color: #7a7a90; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px; }
+        .stat-val { font-size: 1.1rem; font-weight: 700; color: #00d2ff; font-family: 'SF Mono', Menlo, monospace; font-variant-numeric: tabular-nums; }
+
+        /* Grids */
+        .grid-3col {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 14px;
+            margin-bottom: 14px;
+        }
+
+        .grid-2col {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 14px;
+            margin-bottom: 14px;
+        }
+
+        /* Cards */
+        .card {
+            background: #111120;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 14px;
+            padding: 16px;
+            position: relative;
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .card-title {
+            font-size: 0.86rem;
+            font-weight: 600;
+            color: #d0d0e0;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .card-unit { font-size: 0.7rem; color: #666; }
+
+        /* Value display */
+        .val-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+        }
+
+        .val-box {
+            background: #090912;
+            border: 1px solid rgba(255, 255, 255, 0.04);
+            border-radius: 8px;
+            padding: 10px 6px;
+            text-align: center;
+        }
+
+        .val-axis {
+            font-size: 0.68rem;
+            color: #666;
+            margin-bottom: 2px;
+            font-weight: 600;
+        }
+
+        .val-num {
+            font-size: 1.25rem;
+            font-weight: 700;
+            font-family: 'SF Mono', Menlo, monospace;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .color-x { color: #ff6b6b; }
+        .color-y { color: #51cf66; }
+        .color-z { color: #339af0; }
+        .color-accent { color: #ffd43b; }
+
+        /* Canvas Chart */
+        .chart-container {
+            width: 100%;
+            height: 160px;
+            background: #090912;
+            border: 1px solid rgba(255, 255, 255, 0.04);
+            border-radius: 10px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        /* 3x3 Matrix */
+        .matrix-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 6px;
+            max-width: 440px;
+            margin: 0 auto;
+        }
+
+        .matrix-cell {
+            background: #090912;
+            border: 1px solid rgba(255, 255, 255, 0.04);
+            border-radius: 8px;
+            padding: 10px 4px;
+            text-align: center;
+            font-family: 'SF Mono', Menlo, monospace;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #c0c0d8;
+            font-variant-numeric: tabular-nums;
+        }
+
+        /* Permission Banner */
+        .permission-banner {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%) translateY(150%);
+            width: 580px;
+            max-width: calc(100vw - 32px);
+            background: rgba(20, 20, 36, 0.95);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(0, 210, 255, 0.35);
+            border-radius: 18px;
+            padding: 20px 22px;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.75), 0 0 30px rgba(0, 210, 255, 0.15);
+            z-index: 9999;
+            transition: transform 0.45s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease;
+            opacity: 0;
+        }
+
+        .permission-banner.show {
+            transform: translateX(-50%) translateY(0);
+            opacity: 1;
+        }
+
+        .perm-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+
+        .perm-title {
+            font-size: 0.98rem;
+            font-weight: 700;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .perm-badge {
+            background: rgba(0, 210, 255, 0.15);
+            color: #00d2ff;
+            font-size: 0.68rem;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-weight: 600;
+        }
+
+        .perm-text {
+            font-size: 0.82rem;
+            color: #a0a0b8;
+            line-height: 1.5;
+            margin-bottom: 14px;
+        }
+
+        .perm-actions {
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .perm-btn-allow {
+            background: linear-gradient(135deg, #00d2ff, #0083b0);
+            color: #fff;
+            border: none;
+            padding: 8px 20px;
+            border-radius: 10px;
+            font-weight: 600;
+            font-size: 0.82rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .perm-btn-allow:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 14px rgba(0, 210, 255, 0.35);
+        }
+
+        .perm-btn-decline {
+            background: transparent;
+            color: #888;
+            border: none;
+            padding: 7px 12px;
+            border-radius: 8px;
+            font-size: 0.8rem;
+            cursor: pointer;
+        }
+
+        /* Export Modal */
+        .modal-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0, 0, 0, 0.75);
+            backdrop-filter: blur(8px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.25s;
+        }
+
+        .modal-overlay.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .modal {
+            background: #141426;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 24px;
+            width: 500px;
+            max-width: 90vw;
+            box-shadow: 0 24px 48px rgba(0, 0, 0, 0.6);
+        }
+
+        .modal-title {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: #00d2ff;
+            margin-bottom: 10px;
+        }
+
+        .modal-desc {
+            font-size: 0.82rem;
+            color: #a0a0b8;
+            line-height: 1.5;
+            margin-bottom: 14px;
+        }
+
+        .export-options {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin: 14px 0;
+        }
+
+        .export-opt {
+            background: #090912;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 8px;
+            padding: 10px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .export-opt:hover { border-color: #00d2ff; }
+    </style>
+</head>
+<body>
+
+    <!-- Header -->
+    <header class="header">
+        <div class="header-left">
+            <h1>📱 Phone IMU Live Stream</h1>
+            <div class="status-dot-wrap">
+                <div id="statusDot" class="dot"></div>
+                <span id="statusLabel">Standby</span>
+            </div>
+        </div>
+
+        <div class="controls">
+            <a href="experiment.html" class="btn btn-secondary">🧪 Experiments</a>
+            <button id="btnRecord" class="btn btn-primary" onclick="toggleRecording()">⏺ Start</button>
+            <button id="btnExport" class="btn btn-success" onclick="showExportModal()" disabled>📥 Export</button>
+            <button class="btn btn-secondary" onclick="clearData()">🗑 Clear</button>
+            <button class="btn btn-secondary" onclick="requestSensorAccess()">🛡️ Access</button>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="container">
+
+        <!-- Stats Bar -->
+        <section class="stats-bar">
+            <div class="stat-box">
+                <div class="stat-label">Duration</div>
+                <div id="recordDuration" class="stat-val">00:00.000</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-label">Samples</div>
+                <div id="totalSamples" class="stat-val">0</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-label">Rate</div>
+                <div id="avgSampleRate" class="stat-val">-- Hz</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-label">Max Accel</div>
+                <div id="maxAccel" class="stat-val">0.000 G</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-label">Max Gyro</div>
+                <div id="maxGyro" class="stat-val">0.000 rad/s</div>
+            </div>
+        </section>
+
+        <!-- 3-Column Realtime Sensor Readouts -->
+        <section class="grid-3col">
+            <!-- Acceleration -->
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">📈 Phone Acceleration</span>
+                    <span class="card-unit">Unit: G (User)</span>
+                </div>
+                <div class="val-grid">
+                    <div class="val-box">
+                        <div class="val-axis">X</div>
+                        <div class="val-num color-x" id="accX">0.000</div>
+                    </div>
+                    <div class="val-box">
+                        <div class="val-axis">Y</div>
+                        <div class="val-num color-y" id="accY">0.000</div>
+                    </div>
+                    <div class="val-box">
+                        <div class="val-axis">Z</div>
+                        <div class="val-num color-z" id="accZ">0.000</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Rotation Rate -->
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">🔄 Phone Gyroscope</span>
+                    <span class="card-unit">Unit: rad/s</span>
+                </div>
+                <div class="val-grid">
+                    <div class="val-box">
+                        <div class="val-axis">X (Pitch)</div>
+                        <div class="val-num color-x" id="gyroX">0.000</div>
+                    </div>
+                    <div class="val-box">
+                        <div class="val-axis">Y (Roll)</div>
+                        <div class="val-num color-y" id="gyroY">0.000</div>
+                    </div>
+                    <div class="val-box">
+                        <div class="val-axis">Z (Yaw)</div>
+                        <div class="val-num color-z" id="gyroZ">0.000</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Attitude -->
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">🧭 Orientation Attitude</span>
+                    <span class="card-unit">Unit: rad</span>
+                </div>
+                <div class="val-grid">
+                    <div class="val-box">
+                        <div class="val-axis">Roll (γ)</div>
+                        <div class="val-num color-accent" id="attRoll">0.000</div>
+                    </div>
+                    <div class="val-box">
+                        <div class="val-axis">Pitch (β)</div>
+                        <div class="val-num color-accent" id="attPitch">0.000</div>
+                    </div>
+                    <div class="val-box">
+                        <div class="val-axis">Yaw (α)</div>
+                        <div class="val-num color-accent" id="attYaw">0.000</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Waveforms (Row 2) -->
+        <section class="grid-2col">
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">📊 Acceleration Waveform</span>
+                </div>
+                <div class="chart-container">
+                    <canvas id="accChart"></canvas>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">📊 Gyroscope Waveform</span>
+                </div>
+                <div class="chart-container">
+                    <canvas id="gyroChart"></canvas>
+                </div>
+            </div>
+        </section>
+
+        <!-- 3x3 Rotation Matrix (Row 3) -->
+        <section class="card">
+            <div class="card-header">
+                <span class="card-title">🧊 3×3 Spatial Rotation Matrix</span>
+            </div>
+            <div class="matrix-grid">
+                <div class="matrix-cell" id="m11">1.000</div>
+                <div class="matrix-cell" id="m12">0.000</div>
+                <div class="matrix-cell" id="m13">0.000</div>
+                <div class="matrix-cell" id="m21">0.000</div>
+                <div class="matrix-cell" id="m22">1.000</div>
+                <div class="matrix-cell" id="m23">0.000</div>
+                <div class="matrix-cell" id="m31">0.000</div>
+                <div class="matrix-cell" id="m32">0.000</div>
+                <div class="matrix-cell" id="m33">1.000</div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Cookie / Permission Style Authorization Banner -->
+    <div id="permissionBanner" class="permission-banner">
+        <div class="perm-header">
+            <span class="perm-title">📱 Phone IMU Permission</span>
+            <span class="perm-badge">W3C DeviceMotion</span>
+        </div>
+        <p class="perm-text">
+            Allow this webpage to access your smartphone's built-in Accelerometer and Gyroscope sensor telemetry.
+        </p>
+        <div class="perm-actions">
+            <button class="perm-btn-decline" onclick="hidePermissionBanner()">Dismiss</button>
+            <button class="perm-btn-allow" onclick="requestSensorAccess()">
+                <span>🛡️ Authorize & Start</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Export Modal -->
+    <div id="exportModal" class="modal-overlay">
+        <div class="modal">
+            <div class="modal-title">📥 Export Phone IMU Dataset</div>
+            <p class="modal-desc">Select formats to download. Text files match standard sensor recording format.</p>
+            <div class="export-options">
+                <label class="export-opt">
+                    <input type="checkbox" id="expAcc" checked>
+                    <div>
+                        <div style="font-weight: 600; font-size: 0.85rem;">acc.txt</div>
+                        <div style="font-size: 0.7rem; color: #777;">Acceleration (3-axis)</div>
+                    </div>
+                </label>
+                <label class="export-opt">
+                    <input type="checkbox" id="expGyro" checked>
+                    <div>
+                        <div style="font-weight: 600; font-size: 0.85rem;">rotation_rate.txt</div>
+                        <div style="font-size: 0.7rem; color: #777;">Gyroscope (3-axis)</div>
+                    </div>
+                </label>
+                <label class="export-opt">
+                    <input type="checkbox" id="expMatrix" checked>
+                    <div>
+                        <div style="font-weight: 600; font-size: 0.85rem;">rotation_matrix.txt</div>
+                        <div style="font-size: 0.7rem; color: #777;">3×3 Rotation Matrix</div>
+                    </div>
+                </label>
+                <label class="export-opt">
+                    <input type="checkbox" id="expCSV" checked>
+                    <div>
+                        <div style="font-weight: 600; font-size: 0.85rem;">imu_data.csv</div>
+                        <div style="font-size: 0.7rem; color: #777;">Standard CSV Table</div>
+                    </div>
+                </label>
+                <label class="export-opt">
+                    <input type="checkbox" id="expJSON">
+                    <div>
+                        <div style="font-weight: 600; font-size: 0.85rem;">imu_data.json</div>
+                        <div style="font-size: 0.7rem; color: #777;">Raw JSON Array</div>
+                    </div>
+                </label>
+            </div>
+            <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px;">
+                <button class="btn btn-secondary" onclick="hideExportModal()">Cancel</button>
+                <button class="btn btn-success" onclick="exportData()">Download Files</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    // ============================================================
+    //  State Management
+    // ============================================================
+    const state = {
+        active: false,
+        recording: false,
+        recordStartTime: null,
+        samples: [],
+        sampleCount: 0,
+        maxAccel: 0,
+        maxGyro: 0,
+        sampleTimestamps: [],
+        chartData: {
+            acc: { x: [], y: [], z: [] },
+            gyro: { x: [], y: [], z: [] }
+        },
+        currentAttitude: [0, 0, 0], // roll, pitch, yaw in rad
+        currentMatrix: [1,0,0, 0,1,0, 0,0,1],
+        lastMotionTime: performance.now()
+    };
+
+    const G_CONST = 9.80665;
+    const DEG_TO_RAD = Math.PI / 180;
+    const CHART_MAX_POINTS = 200;
+
+    function formatTime(date) {
+        const h = String(date.getHours()).padStart(2, '0');
+        const m = String(date.getMinutes()).padStart(2, '0');
+        const s = String(date.getSeconds()).padStart(2, '0');
+        const ms = String(date.getMilliseconds()).padStart(3, '0');
+        return `${h}:${m}:${s}.${ms}`;
+    }
+
+    // ============================================================
+    //  Sensor Authorization & Listeners (W3C Motion API)
+    // ============================================================
+    function showPermissionBanner() {
+        document.getElementById('permissionBanner').classList.add('show');
+    }
+
+    function hidePermissionBanner() {
+        document.getElementById('permissionBanner').classList.remove('show');
+    }
+
+    async function requestSensorAccess() {
+        hidePermissionBanner();
+
+        // 1. iOS 13+ DeviceMotionEvent permission request
+        if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+            try {
+                const response = await DeviceMotionEvent.requestPermission();
+                if (response === 'granted') {
+                    if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+                        await DeviceOrientationEvent.requestPermission().catch(() => {});
+                    }
+                    startSensors();
+                } else {
+                    alert('Sensor access permission was denied by user.');
+                }
+            } catch (err) {
+                console.error(err);
+                startSensors();
+            }
+        } else {
+            // Android / Standard Browsers
+            startSensors();
+        }
+    }
+
+    function startSensors() {
+        if (state.active) return;
+        state.active = true;
+
+        window.addEventListener('devicemotion', handleDeviceMotion, true);
+        window.addEventListener('deviceorientation', handleDeviceOrientation, true);
+
+        updateStatus(true);
+        hidePermissionBanner();
+    }
+
+    function handleDeviceOrientation(event) {
+        // alpha (yaw 0..360), beta (pitch -180..180), gamma (roll -90..90) in deg
+        const alpha = (event.alpha || 0) * DEG_TO_RAD;
+        const beta  = (event.beta  || 0) * DEG_TO_RAD;
+        const gamma = (event.gamma || 0) * DEG_TO_RAD;
+
+        state.currentAttitude = [gamma, beta, alpha]; // [roll, pitch, yaw]
+
+        updateValue('attRoll', gamma);
+        updateValue('attPitch', beta);
+        updateValue('attYaw', alpha);
+
+        // Compute 3x3 Rotation Matrix from Euler angles (ZYX / Z-X-Y convention)
+        const cA = Math.cos(alpha), sA = Math.sin(alpha);
+        const cB = Math.cos(beta),  sB = Math.sin(beta);
+        const cG = Math.cos(gamma), sG = Math.sin(gamma);
+
+        const m11 = cA * cG - sA * sB * sG;
+        const m12 = -cB * sA;
+        const m13 = cA * sG + cG * sA * sB;
+
+        const m21 = cG * sA + cA * sB * sG;
+        const m22 = cA * cB;
+        const m23 = sA * sG - cA * cG * sB;
+
+        const m31 = -cB * sG;
+        const m32 = sB;
+        const m33 = cB * cG;
+
+        state.currentMatrix = [m11, m12, m13, m21, m22, m23, m31, m32, m33];
+
+        updateValue('m11', m11); updateValue('m12', m12); updateValue('m13', m13);
+        updateValue('m21', m21); updateValue('m22', m22); updateValue('m23', m23);
+        updateValue('m31', m31); updateValue('m32', m32); updateValue('m33', m33);
+    }
+
+    function handleDeviceMotion(event) {
+        state.sampleCount++;
+
+        // Linear Acceleration (excluding gravity, in m/s^2 -> converted to G)
+        const acc = event.acceleration || {};
+        const accX = (acc.x || 0) / G_CONST;
+        const accY = (acc.y || 0) / G_CONST;
+        const accZ = (acc.z || 0) / G_CONST;
+
+        // Rotation Rate (in deg/s -> converted to rad/s)
+        const rot = event.rotationRate || {};
+        const gyroX = (rot.beta  || 0) * DEG_TO_RAD; // pitch rate
+        const gyroY = (rot.gamma || 0) * DEG_TO_RAD; // roll rate
+        const gyroZ = (rot.alpha || 0) * DEG_TO_RAD; // yaw rate
+
+        updateValue('accX', accX);
+        updateValue('accY', accY);
+        updateValue('accZ', accZ);
+
+        updateValue('gyroX', gyroX);
+        updateValue('gyroY', gyroY);
+        updateValue('gyroZ', gyroZ);
+
+        // Sampling Rate
+        const now = performance.now();
+        state.sampleTimestamps.push(now);
+        while (state.sampleTimestamps.length > 100) state.sampleTimestamps.shift();
+        if (state.sampleTimestamps.length > 1) {
+            const dt = (state.sampleTimestamps[state.sampleTimestamps.length - 1] - state.sampleTimestamps[0]) / (state.sampleTimestamps.length - 1);
+            const rate = (1000 / dt).toFixed(1);
+            document.getElementById('avgSampleRate').textContent = `${rate} Hz`;
+        }
+
+        // Mag stats
+        const accMag = Math.sqrt(accX**2 + accY**2 + accZ**2);
+        const gyroMag = Math.sqrt(gyroX**2 + gyroY**2 + gyroZ**2);
+        state.maxAccel = Math.max(state.maxAccel, accMag);
+        state.maxGyro = Math.max(state.maxGyro, gyroMag);
+
+        // Push charts
+        pushChart(state.chartData.acc, [accX, accY, accZ]);
+        pushChart(state.chartData.gyro, [gyroX, gyroY, gyroZ]);
+
+        // Sample storage if recording
+        if (state.recording) {
+            const sample = {
+                timestamp: formatTime(new Date()),
+                userAcceleration: [accX, accY, accZ],
+                rotationRate: [gyroX, gyroY, gyroZ],
+                rotationMatrix: [...state.currentMatrix],
+                gravity: [
+                    ((event.accelerationIncludingGravity?.x || 0) - (acc.x || 0)) / G_CONST,
+                    ((event.accelerationIncludingGravity?.y || 0) - (acc.y || 0)) / G_CONST,
+                    ((event.accelerationIncludingGravity?.z || 0) - (acc.z || 0)) / G_CONST
+                ],
+                attitude: [...state.currentAttitude]
+            };
+            state.samples.push(sample);
+            updateRecordingStats();
+        }
+    }
+
+    function updateValue(id, val) {
+        const el = document.getElementById(id);
+        if (el) el.textContent = val.toFixed(3);
+    }
+
+    function pushChart(target, vals) {
+        target.x.push(vals[0]);
+        target.y.push(vals[1]);
+        target.z.push(vals[2]);
+        if (target.x.length > CHART_MAX_POINTS) {
+            target.x.shift();
+            target.y.shift();
+            target.z.shift();
+        }
+    }
+
+    function updateStatus(active) {
+        const dot = document.getElementById('statusDot');
+        const label = document.getElementById('statusLabel');
+
+        dot.className = 'dot';
+        if (state.recording) {
+            dot.classList.add('recording');
+            label.textContent = 'Recording';
+            label.style.color = '#ff4444';
+        } else if (active) {
+            dot.classList.add('connected');
+            label.textContent = 'Streaming';
+            label.style.color = '#00d264';
+        } else {
+            label.textContent = 'Standby';
+            label.style.color = '#8e8ea0';
+        }
+    }
+
+    // ============================================================
+    //  Waveform Charts
+    // ============================================================
+    function drawChart(canvasId, data, colors) {
+        const canvas = document.getElementById(canvasId);
+        if (!canvas) return;
+
+        const ctx = canvas.getContext('2d');
+        const dpr = window.devicePixelRatio || 1;
+        const rect = canvas.getBoundingClientRect();
+        canvas.width = rect.width * dpr;
+        canvas.height = rect.height * dpr;
+        ctx.scale(dpr, dpr);
+
+        const w = rect.width, h = rect.height;
+        ctx.clearRect(0, 0, w, h);
+
+        // Grid
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+        ctx.lineWidth = 1;
+        for (let i = 0; i <= 4; i++) {
+            const y = (h / 4) * i;
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.lineTo(w, y);
+            ctx.stroke();
+        }
+
+        if (data.x.length < 2) return;
+
+        const all = [...data.x, ...data.y, ...data.z];
+        let min = Math.min(...all), max = Math.max(...all);
+        const range = max - min || 1;
+        min -= range * 0.15; max += range * 0.15;
+
+        // Zero line
+        const zeroY = h - (0 - min) / (max - min) * h;
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(0, zeroY);
+        ctx.lineTo(w, zeroY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        const channels = [
+            { v: data.x, c: colors[0], label: 'X' },
+            { v: data.y, c: colors[1], label: 'Y' },
+            { v: data.z, c: colors[2], label: 'Z' }
+        ];
+
+        channels.forEach(ch => {
+            ctx.strokeStyle = ch.c;
+            ctx.lineWidth = 1.6;
+            ctx.beginPath();
+            for (let i = 0; i < ch.v.length; i++) {
+                const x = (i / (CHART_MAX_POINTS - 1)) * w;
+                const y = h - ((ch.v[i] - min) / (max - min)) * h;
+                if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+        });
+
+        // Legends
+        ctx.font = '10px monospace';
+        channels.forEach((ch, i) => {
+            ctx.fillStyle = ch.c;
+            ctx.fillText(ch.label, 10 + i * 28, 14);
+        });
+
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
+        ctx.fillText(max.toFixed(2), w - 50, 12);
+        ctx.fillText(min.toFixed(2), w - 50, h - 4);
+    }
+
+    function renderLoop() {
+        drawChart('accChart', state.chartData.acc, ['#ff6b6b', '#51cf66', '#339af0']);
+        drawChart('gyroChart', state.chartData.gyro, ['#ff6b6b', '#51cf66', '#339af0']);
+        requestAnimationFrame(renderLoop);
+    }
+
+    // ============================================================
+    //  Recording
+    // ============================================================
+    function toggleRecording() {
+        if (!state.active) {
+            requestSensorAccess();
+            return;
+        }
+
+        state.recording = !state.recording;
+        const btn = document.getElementById('btnRecord');
+
+        if (state.recording) {
+            state.samples = [];
+            state.recordStartTime = Date.now();
+            state.maxAccel = 0;
+            state.maxGyro = 0;
+            btn.textContent = '⏹ Stop';
+            btn.className = 'btn btn-danger';
+            updateStatus(true);
+            document.getElementById('btnExport').disabled = true;
+        } else {
+            btn.textContent = '⏺ Start';
+            btn.className = 'btn btn-primary';
+            updateStatus(true);
+            document.getElementById('btnExport').disabled = state.samples.length === 0;
+        }
+    }
+
+    function updateRecordingStats() {
+        if (!state.recording || !state.recordStartTime) return;
+
+        const elapsed = Date.now() - state.recordStartTime;
+        const sec = Math.floor(elapsed / 1000);
+        const ms = elapsed % 1000;
+        const min = Math.floor(sec / 60);
+
+        document.getElementById('recordDuration').textContent =
+            `${String(min).padStart(2, '0')}:${String(sec % 60).padStart(2, '0')}.${String(ms).padStart(3, '0')}`;
+        document.getElementById('totalSamples').textContent = state.samples.length;
+        document.getElementById('maxAccel').textContent = `${state.maxAccel.toFixed(3)} G`;
+        document.getElementById('maxGyro').textContent = `${state.maxGyro.toFixed(3)} rad/s`;
+    }
+
+    // ============================================================
+    //  Export
+    // ============================================================
+    function showExportModal() { document.getElementById('exportModal').classList.add('active'); }
+    function hideExportModal() { document.getElementById('exportModal').classList.remove('active'); }
+
+    function exportData() {
+        const s = state.samples;
+        if (s.length === 0) return;
+
+        if (document.getElementById('expAcc').checked) {
+            const txt = s.map(x => `${x.timestamp} ${x.userAcceleration[0].toFixed(6)} ${x.userAcceleration[1].toFixed(6)} ${x.userAcceleration[2].toFixed(6)}`).join('\n') + '\n';
+            download(txt, 'acc.txt');
+        }
+        if (document.getElementById('expGyro').checked) {
+            const txt = s.map(x => `${x.timestamp} ${x.rotationRate[0].toFixed(6)} ${x.rotationRate[1].toFixed(6)} ${x.rotationRate[2].toFixed(6)}`).join('\n') + '\n';
+            download(txt, 'rotation_rate.txt');
+        }
+        if (document.getElementById('expMatrix').checked) {
+            const txt = s.map(x => `${x.timestamp} ${x.rotationMatrix.map(v => v.toFixed(6)).join(' ')}`).join('\n') + '\n';
+            download(txt, 'rotation_matrix.txt');
+        }
+        if (document.getElementById('expCSV').checked) {
+            const header = 'timestamp,acc_x,acc_y,acc_z,gyro_x,gyro_y,gyro_z,m11,m12,m13,m21,m22,m23,m31,m32,m33,grav_x,grav_y,grav_z,roll,pitch,yaw\n';
+            const rows = s.map(x => [
+                x.timestamp,
+                ...x.userAcceleration.map(v => v.toFixed(6)),
+                ...x.rotationRate.map(v => v.toFixed(6)),
+                ...x.rotationMatrix.map(v => v.toFixed(6)),
+                ...(x.gravity || [0,0,0]).map(v => v.toFixed(6)),
+                ...(x.attitude || [0,0,0]).map(v => v.toFixed(6))
+            ].join(',')).join('\n');
+            download(header + rows, 'imu_data.csv', 'text/csv');
+        }
+        if (document.getElementById('expJSON').checked) {
+            download(JSON.stringify(s, null, 2), 'imu_data.json', 'application/json');
+        }
+
+        hideExportModal();
+    }
+
+    function download(content, filename, type = 'text/plain') {
+        const blob = new Blob([content], { type });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+
+    function clearData() {
+        state.samples = [];
+        state.sampleCount = 0;
+        state.maxAccel = 0;
+        state.maxGyro = 0;
+        state.chartData = { acc: { x: [], y: [], z: [] }, gyro: { x: [], y: [], z: [] } };
+
+        document.getElementById('recordDuration').textContent = '00:00.000';
+        document.getElementById('totalSamples').textContent = '0';
+        document.getElementById('avgSampleRate').textContent = '-- Hz';
+        document.getElementById('maxAccel').textContent = '0.000 G';
+        document.getElementById('maxGyro').textContent = '0.000 rad/s';
+    }
+
+    // Init
+    requestAnimationFrame(renderLoop);
+    setInterval(updateRecordingStats, 100);
+
+    // Auto-prompt permission banner on load
+    setTimeout(() => {
+        if (!state.active) {
+            showPermissionBanner();
+        }
+    }, 600);
+    </script>
+</body>
+</html>
