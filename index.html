@@ -2,10 +2,17 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Phone IMU Live Stream</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>IMU Telemetry App</title>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+            -webkit-user-select: none;
+            user-select: none;
+        }
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Helvetica Neue', Arial, sans-serif;
@@ -13,14 +20,16 @@
             color: #f0f0f5;
             min-height: 100vh;
             overflow-x: hidden;
+            padding-top: env(safe-area-inset-top, 0px);
+            padding-bottom: calc(env(safe-area-inset-bottom, 20px) + 76px);
         }
 
-        /* Header */
+        /* Top Header */
         .header {
-            background: rgba(18, 18, 32, 0.85);
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
-            padding: 14px 20px;
+            background: rgba(16, 16, 28, 0.9);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            padding: 10px 14px;
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -30,50 +39,77 @@
             z-index: 100;
         }
 
-        .header-left {
-            display: flex;
-            align-items: center;
-            gap: 10px;
+        /* Segmented Source Switcher */
+        .source-segmented {
+            display: inline-flex;
+            background: rgba(255, 255, 255, 0.07);
+            padding: 2px;
+            border-radius: 9px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
         }
 
-        .header h1 {
-            font-size: 1.1rem;
-            font-weight: 700;
-            letter-spacing: -0.3px;
-            background: linear-gradient(90deg, #00d2ff 0%, #9d4edd 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
+        .seg-btn {
+            background: transparent;
+            border: none;
+            color: #9a9ab0;
+            padding: 6px 12px;
+            font-size: 0.78rem;
+            font-weight: 600;
+            border-radius: 7px;
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .seg-btn.active {
+            background: linear-gradient(135deg, #00d2ff, #0083b0);
+            color: #ffffff;
+            box-shadow: 0 2px 8px rgba(0, 210, 255, 0.35);
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 8px;
         }
 
         .status-dot-wrap {
             display: inline-flex;
             align-items: center;
-            gap: 6px;
-            font-size: 0.75rem;
+            gap: 5px;
+            font-size: 0.72rem;
             color: #8e8ea0;
             background: rgba(255, 255, 255, 0.04);
-            padding: 3px 8px;
-            border-radius: 20px;
+            padding: 4px 8px;
+            border-radius: 16px;
             border: 1px solid rgba(255, 255, 255, 0.06);
+            max-width: 140px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         .dot {
             width: 7px;
             height: 7px;
+            min-width: 7px;
             border-radius: 50%;
-            background: #666;
-            transition: all 0.3s;
-        }
-
-        .dot.connected {
             background: #00d264;
-            box-shadow: 0 0 10px rgba(0, 210, 100, 0.6);
+            box-shadow: 0 0 8px rgba(0, 210, 100, 0.6);
+            transition: all 0.3s;
         }
 
         .dot.recording {
             background: #ff4444;
-            box-shadow: 0 0 10px rgba(255, 68, 68, 0.8);
+            box-shadow: 0 0 8px rgba(255, 68, 68, 0.8);
             animation: blink 0.8s infinite;
+        }
+
+        .dot.warning {
+            background: #ffd43b;
+            box-shadow: 0 0 8px rgba(255, 212, 59, 0.6);
         }
 
         @keyframes blink {
@@ -81,75 +117,61 @@
             50% { opacity: 0.3; }
         }
 
-        /* Controls */
-        .controls {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .btn {
-            padding: 7px 14px;
-            border: none;
+        .btn-exp-link {
+            padding: 5px 9px;
+            background: rgba(255, 255, 255, 0.06);
+            color: #ccc;
+            border: 1px solid rgba(255, 255, 255, 0.08);
             border-radius: 8px;
-            cursor: pointer;
-            font-size: 0.82rem;
+            font-size: 0.74rem;
             font-weight: 600;
-            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            text-decoration: none;
             display: inline-flex;
             align-items: center;
-            gap: 4px;
-            text-decoration: none;
-            outline: none;
-            white-space: nowrap;
+            gap: 3px;
         }
-
-        .btn:hover { transform: translateY(-1px); filter: brightness(1.1); }
-        .btn:active { transform: translateY(0); }
-        .btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none; filter: none; }
-
-        .btn-primary { background: linear-gradient(135deg, #00b4db, #0083b0); color: #fff; }
-        .btn-danger { background: linear-gradient(135deg, #ff416c, #ff4b2b); color: #fff; }
-        .btn-success { background: linear-gradient(135deg, #11998e, #38ef7d); color: #fff; }
-        .btn-secondary { background: rgba(255, 255, 255, 0.07); color: #ccc; border: 1px solid rgba(255, 255, 255, 0.08); }
-        .btn-secondary:hover { background: rgba(255, 255, 255, 0.12); color: #fff; }
 
         /* Container */
         .container {
-            max-width: 1440px;
+            max-width: 100%;
             margin: 0 auto;
-            padding: 16px;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
         }
 
-        /* Stats Bar */
+        /* Stats Bar - Mobile Optimized 2-Row Grid */
         .stats-bar {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
-            gap: 10px;
+            grid-template-columns: 1.2fr 0.9fr 0.9fr;
+            gap: 8px;
             background: #111120;
             border: 1px solid rgba(255, 255, 255, 0.06);
             border-radius: 12px;
-            padding: 12px 14px;
-            margin-bottom: 16px;
+            padding: 10px 12px;
         }
 
         .stat-box { text-align: center; }
-        .stat-label { font-size: 0.68rem; color: #7a7a90; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px; }
-        .stat-val { font-size: 1.1rem; font-weight: 700; color: #00d2ff; font-family: 'SF Mono', Menlo, monospace; font-variant-numeric: tabular-nums; }
+        .stat-label { font-size: 0.62rem; color: #7a7a90; text-transform: uppercase; letter-spacing: 0.3px; margin-bottom: 2px; }
+        .stat-val { font-size: 1.02rem; font-weight: 700; color: #00d2ff; font-family: 'SF Mono', Menlo, monospace; font-variant-numeric: tabular-nums; }
 
-        /* Grids */
-        .grid-3col {
+        /* Grids for Cards */
+        .grid-cards {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-            gap: 14px;
-            margin-bottom: 14px;
+            grid-template-columns: 1fr;
+            gap: 12px;
         }
 
-        .grid-2col {
+        @media (min-width: 768px) {
+            .grid-cards { grid-template-columns: repeat(3, 1fr); }
+            .grid-waveforms { grid-template-columns: 1fr 1fr; }
+        }
+
+        .grid-waveforms {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-            gap: 14px;
-            margin-bottom: 14px;
+            grid-template-columns: 1fr;
+            gap: 12px;
         }
 
         /* Cards */
@@ -157,7 +179,7 @@
             background: #111120;
             border: 1px solid rgba(255, 255, 255, 0.06);
             border-radius: 14px;
-            padding: 16px;
+            padding: 12px 14px;
             position: relative;
         }
 
@@ -165,44 +187,44 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 12px;
+            margin-bottom: 8px;
         }
 
         .card-title {
-            font-size: 0.86rem;
+            font-size: 0.82rem;
             font-weight: 600;
             color: #d0d0e0;
             display: flex;
             align-items: center;
-            gap: 6px;
+            gap: 5px;
         }
 
-        .card-unit { font-size: 0.7rem; color: #666; }
+        .card-unit { font-size: 0.68rem; color: #666; font-family: 'SF Mono', Menlo, monospace; }
 
-        /* Value display */
+        /* Value display (X, Y, Z 3-col) */
         .val-grid {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
-            gap: 8px;
+            gap: 6px;
         }
 
         .val-box {
             background: #090912;
             border: 1px solid rgba(255, 255, 255, 0.04);
             border-radius: 8px;
-            padding: 10px 6px;
+            padding: 8px 4px;
             text-align: center;
         }
 
         .val-axis {
-            font-size: 0.68rem;
+            font-size: 0.65rem;
             color: #666;
             margin-bottom: 2px;
             font-weight: 600;
         }
 
         .val-num {
-            font-size: 1.25rem;
+            font-size: 1.15rem;
             font-weight: 700;
             font-family: 'SF Mono', Menlo, monospace;
             font-variant-numeric: tabular-nums;
@@ -216,7 +238,7 @@
         /* Canvas Chart */
         .chart-container {
             width: 100%;
-            height: 160px;
+            height: 135px;
             background: #090912;
             border: 1px solid rgba(255, 255, 255, 0.04);
             border-radius: 10px;
@@ -235,7 +257,7 @@
             display: grid;
             grid-template-columns: repeat(3, 1fr);
             gap: 6px;
-            max-width: 440px;
+            width: 100%;
             margin: 0 auto;
         }
 
@@ -243,115 +265,90 @@
             background: #090912;
             border: 1px solid rgba(255, 255, 255, 0.04);
             border-radius: 8px;
-            padding: 10px 4px;
+            padding: 8px 4px;
             text-align: center;
             font-family: 'SF Mono', Menlo, monospace;
-            font-size: 0.85rem;
+            font-size: 0.8rem;
             font-weight: 600;
             color: #c0c0d8;
             font-variant-numeric: tabular-nums;
         }
 
-        /* Permission Banner */
-        .permission-banner {
+        /* Floating Bottom Action Toolbar */
+        .bottom-toolbar {
             position: fixed;
-            bottom: 20px;
-            left: 50%;
-            transform: translateX(-50%) translateY(150%);
-            width: 580px;
-            max-width: calc(100vw - 32px);
-            background: rgba(20, 20, 36, 0.95);
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: rgba(14, 14, 24, 0.92);
             backdrop-filter: blur(20px);
             -webkit-backdrop-filter: blur(20px);
-            border: 1px solid rgba(0, 210, 255, 0.35);
-            border-radius: 18px;
-            padding: 20px 22px;
-            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.75), 0 0 30px rgba(0, 210, 255, 0.15);
-            z-index: 9999;
-            transition: transform 0.45s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease;
-            opacity: 0;
-        }
-
-        .permission-banner.show {
-            transform: translateX(-50%) translateY(0);
-            opacity: 1;
-        }
-
-        .perm-header {
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+            padding: 10px 16px calc(env(safe-area-inset-bottom, 12px) + 8px) 16px;
             display: flex;
-            align-items: center;
-            gap: 10px;
-            margin-bottom: 8px;
-        }
-
-        .perm-title {
-            font-size: 0.98rem;
-            font-weight: 700;
-            color: #fff;
-            display: flex;
+            justify-content: space-between;
             align-items: center;
             gap: 8px;
+            z-index: 99;
         }
 
-        .perm-badge {
-            background: rgba(0, 210, 255, 0.15);
-            color: #00d2ff;
-            font-size: 0.68rem;
-            padding: 2px 8px;
-            border-radius: 12px;
-            font-weight: 600;
-        }
-
-        .perm-text {
-            font-size: 0.82rem;
-            color: #a0a0b8;
-            line-height: 1.5;
-            margin-bottom: 14px;
-        }
-
-        .perm-actions {
-            display: flex;
-            justify-content: flex-end;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .perm-btn-allow {
-            background: linear-gradient(135deg, #00d2ff, #0083b0);
-            color: #fff;
+        .btn {
             border: none;
-            padding: 8px 20px;
             border-radius: 10px;
-            font-weight: 600;
+            cursor: pointer;
             font-size: 0.82rem;
-            cursor: pointer;
-            transition: all 0.2s;
-            display: flex;
+            font-weight: 600;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            display: inline-flex;
             align-items: center;
-            gap: 6px;
+            justify-content: center;
+            gap: 5px;
+            text-decoration: none;
+            outline: none;
+            white-space: nowrap;
+            height: 42px;
         }
 
-        .perm-btn-allow:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 4px 14px rgba(0, 210, 255, 0.35);
+        .btn:hover { filter: brightness(1.1); }
+        .btn:active { transform: scale(0.97); }
+        .btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none; filter: none; }
+
+        .btn-record-main {
+            flex: 1.6;
+            background: linear-gradient(135deg, #00b4db, #0083b0);
+            color: #fff;
+            font-size: 0.88rem;
+            font-weight: 700;
+            box-shadow: 0 4px 14px rgba(0, 180, 219, 0.3);
         }
 
-        .perm-btn-decline {
-            background: transparent;
-            color: #888;
-            border: none;
-            padding: 7px 12px;
-            border-radius: 8px;
-            font-size: 0.8rem;
-            cursor: pointer;
+        .btn-record-main.recording {
+            background: linear-gradient(135deg, #ff416c, #ff4b2b);
+            box-shadow: 0 4px 14px rgba(255, 65, 108, 0.4);
+        }
+
+        .btn-action-sub {
+            flex: 1;
+            background: rgba(255, 255, 255, 0.08);
+            color: #d0d0e0;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .btn-action-icon {
+            width: 42px;
+            background: rgba(255, 255, 255, 0.06);
+            color: #aaa;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            font-size: 0.95rem;
         }
 
         /* Export Modal */
         .modal-overlay {
             position: fixed;
             top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(0, 0, 0, 0.75);
-            backdrop-filter: blur(8px);
+            background: rgba(0, 0, 0, 0.78);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
             display: flex;
             align-items: center;
             justify-content: center;
@@ -359,6 +356,7 @@
             opacity: 0;
             pointer-events: none;
             transition: opacity 0.25s;
+            padding: 16px;
         }
 
         .modal-overlay.active {
@@ -370,38 +368,38 @@
             background: #141426;
             border: 1px solid rgba(255, 255, 255, 0.1);
             border-radius: 16px;
-            padding: 24px;
-            width: 500px;
-            max-width: 90vw;
-            box-shadow: 0 24px 48px rgba(0, 0, 0, 0.6);
+            padding: 20px;
+            width: 440px;
+            max-width: 100%;
+            box-shadow: 0 24px 48px rgba(0, 0, 0, 0.7);
         }
 
         .modal-title {
-            font-size: 1.1rem;
+            font-size: 1.05rem;
             font-weight: 700;
             color: #00d2ff;
-            margin-bottom: 10px;
+            margin-bottom: 6px;
         }
 
         .modal-desc {
-            font-size: 0.82rem;
+            font-size: 0.78rem;
             color: #a0a0b8;
-            line-height: 1.5;
-            margin-bottom: 14px;
+            line-height: 1.4;
+            margin-bottom: 12px;
         }
 
         .export-options {
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 8px;
-            margin: 14px 0;
+            margin: 12px 0;
         }
 
         .export-opt {
             background: #090912;
             border: 1px solid rgba(255, 255, 255, 0.06);
             border-radius: 8px;
-            padding: 10px;
+            padding: 8px;
             cursor: pointer;
             display: flex;
             align-items: center;
@@ -414,20 +412,23 @@
 
     <!-- Header -->
     <header class="header">
-        <div class="header-left">
-            <h1>🎧 Source: Earphones</h1>
-            <div class="status-dot-wrap">
-                <div id="statusDot" class="dot"></div>
-                <span id="statusLabel">Standby</span>
-            </div>
+        <!-- Source Selector -->
+        <div class="source-segmented">
+            <button id="srcEarphones" class="seg-btn active" onclick="setSource('earphones')">
+                <span>🎧 Earphones</span>
+            </button>
+            <button id="srcPhone" class="seg-btn" onclick="setSource('phone')">
+                <span>📱 Phone</span>
+            </button>
         </div>
 
-        <div class="controls">
-            <a href="experiment.html" class="btn btn-secondary">🧪 Experiments</a>
-            <button id="btnRecord" class="btn btn-primary" onclick="toggleRecording()">⏺ Start</button>
-            <button id="btnExport" class="btn btn-success" onclick="showExportModal()" disabled>📥 Export</button>
-            <button class="btn btn-secondary" onclick="clearData()">🗑 Clear</button>
-            <button class="btn btn-secondary" onclick="requestSensorAccess()">🛡️ Access</button>
+        <div class="header-right">
+            <!-- Status Dot -->
+            <div class="status-dot-wrap">
+                <div id="statusDot" class="dot"></div>
+                <span id="statusLabel">Earphones Active</span>
+            </div>
+            <a href="experiment.html" class="btn-exp-link">🧪 Exp</a>
         </div>
     </header>
 
@@ -448,23 +449,15 @@
                 <div class="stat-label">Rate</div>
                 <div id="avgSampleRate" class="stat-val">-- Hz</div>
             </div>
-            <div class="stat-box">
-                <div class="stat-label">Max Accel</div>
-                <div id="maxAccel" class="stat-val">0.000 G</div>
-            </div>
-            <div class="stat-box">
-                <div class="stat-label">Max Gyro</div>
-                <div id="maxGyro" class="stat-val">0.000 rad/s</div>
-            </div>
         </section>
 
-        <!-- 3-Column Realtime Sensor Readouts -->
-        <section class="grid-3col">
+        <!-- Sensor Numeric Readouts -->
+        <section class="grid-cards">
             <!-- Acceleration -->
             <div class="card">
                 <div class="card-header">
                     <span class="card-title">📈 Acceleration</span>
-                    <span class="card-unit">Unit: G (User)</span>
+                    <span class="card-unit">G (User)</span>
                 </div>
                 <div class="val-grid">
                     <div class="val-box">
@@ -486,7 +479,7 @@
             <div class="card">
                 <div class="card-header">
                     <span class="card-title">🔄 Gyroscope</span>
-                    <span class="card-unit">Unit: rad/s</span>
+                    <span class="card-unit">rad/s</span>
                 </div>
                 <div class="val-grid">
                     <div class="val-box">
@@ -507,8 +500,8 @@
             <!-- Attitude -->
             <div class="card">
                 <div class="card-header">
-                    <span class="card-title">🧭 Orientation Attitude</span>
-                    <span class="card-unit">Unit: rad</span>
+                    <span class="card-title">🧭 Attitude (Orientation)</span>
+                    <span class="card-unit">rad</span>
                 </div>
                 <div class="val-grid">
                     <div class="val-box">
@@ -527,8 +520,8 @@
             </div>
         </section>
 
-        <!-- Waveforms (Row 2) -->
-        <section class="grid-2col">
+        <!-- Waveforms -->
+        <section class="grid-waveforms">
             <div class="card">
                 <div class="card-header">
                     <span class="card-title">📊 Acceleration Waveform</span>
@@ -548,7 +541,7 @@
             </div>
         </section>
 
-        <!-- 3x3 Rotation Matrix (Row 3) -->
+        <!-- 3x3 Rotation Matrix -->
         <section class="card">
             <div class="card-header">
                 <span class="card-title">🧊 3×3 Spatial Rotation Matrix</span>
@@ -568,68 +561,57 @@
 
     </main>
 
-    <!-- Cookie / Permission Style Authorization Banner -->
-    <div id="permissionBanner" class="permission-banner">
-        <div class="perm-header">
-            <span class="perm-title">📱 Phone IMU Permission</span>
-            <span class="perm-badge">W3C DeviceMotion</span>
-        </div>
-        <p class="perm-text">
-            Allow this webpage to access your smartphone's built-in Accelerometer and Gyroscope sensor telemetry.
-        </p>
-        <div class="perm-actions">
-            <button class="perm-btn-decline" onclick="hidePermissionBanner()">Dismiss</button>
-            <button class="perm-btn-allow" onclick="requestSensorAccess()">
-                <span>🛡️ Authorize & Start</span>
-            </button>
-        </div>
-    </div>
+    <!-- Floating Bottom Action Toolbar -->
+    <nav class="bottom-toolbar">
+        <button id="btnRecord" class="btn btn-record-main" onclick="toggleRecording()">
+            <span>⏺ Record</span>
+        </button>
+        <button id="btnExport" class="btn btn-action-sub" onclick="showExportModal()" disabled>
+            <span>📤 Share</span>
+        </button>
+        <button class="btn btn-action-icon" onclick="clearData()" title="Clear Data">
+            <span>🗑</span>
+        </button>
+    </nav>
 
     <!-- Export Modal -->
     <div id="exportModal" class="modal-overlay">
         <div class="modal">
-            <div class="modal-title">📥 Export Phone IMU Dataset</div>
-            <p class="modal-desc">Select formats to download. Text files match standard sensor recording format.</p>
+            <div class="modal-title">📤 Share / Export Dataset</div>
+            <p class="modal-desc">Export and share recorded dataset via iOS Native Share Sheet (AirDrop, Files, Mail).</p>
             <div class="export-options">
                 <label class="export-opt">
                     <input type="checkbox" id="expAcc" checked>
                     <div>
-                        <div style="font-weight: 600; font-size: 0.85rem;">acc.txt</div>
-                        <div style="font-size: 0.7rem; color: #777;">Acceleration (3-axis)</div>
+                        <div style="font-weight: 600; font-size: 0.8rem;">acc.txt</div>
+                        <div style="font-size: 0.68rem; color: #777;">Acceleration</div>
                     </div>
                 </label>
                 <label class="export-opt">
                     <input type="checkbox" id="expGyro" checked>
                     <div>
-                        <div style="font-weight: 600; font-size: 0.85rem;">rotation_rate.txt</div>
-                        <div style="font-size: 0.7rem; color: #777;">Gyroscope (3-axis)</div>
+                        <div style="font-weight: 600; font-size: 0.8rem;">rotation_rate.txt</div>
+                        <div style="font-size: 0.68rem; color: #777;">Gyroscope</div>
                     </div>
                 </label>
                 <label class="export-opt">
                     <input type="checkbox" id="expMatrix" checked>
                     <div>
-                        <div style="font-weight: 600; font-size: 0.85rem;">rotation_matrix.txt</div>
-                        <div style="font-size: 0.7rem; color: #777;">3×3 Rotation Matrix</div>
+                        <div style="font-weight: 600; font-size: 0.8rem;">rotation_matrix.txt</div>
+                        <div style="font-size: 0.68rem; color: #777;">3×3 Matrix</div>
                     </div>
                 </label>
                 <label class="export-opt">
                     <input type="checkbox" id="expCSV" checked>
                     <div>
-                        <div style="font-weight: 600; font-size: 0.85rem;">imu_data.csv</div>
-                        <div style="font-size: 0.7rem; color: #777;">Standard CSV Table</div>
-                    </div>
-                </label>
-                <label class="export-opt">
-                    <input type="checkbox" id="expJSON">
-                    <div>
-                        <div style="font-weight: 600; font-size: 0.85rem;">imu_data.json</div>
-                        <div style="font-size: 0.7rem; color: #777;">Raw JSON Array</div>
+                        <div style="font-weight: 600; font-size: 0.8rem;">imu_data.csv</div>
+                        <div style="font-size: 0.68rem; color: #777;">Standard CSV</div>
                     </div>
                 </label>
             </div>
-            <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px;">
-                <button class="btn btn-secondary" onclick="hideExportModal()">Cancel</button>
-                <button class="btn btn-success" onclick="exportData()">Download Files</button>
+            <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px;">
+                <button class="btn btn-action-sub" style="height:36px; padding:0 14px;" onclick="hideExportModal()">Cancel</button>
+                <button class="btn btn-record-main" style="height:36px; padding:0 18px; flex:none;" onclick="exportData()">Confirm & Share</button>
             </div>
         </div>
     </div>
@@ -639,7 +621,8 @@
     //  State Management
     // ============================================================
     const state = {
-        active: false,
+        currentSource: 'earphones',
+        active: true,
         recording: false,
         recordStartTime: null,
         samples: [],
@@ -651,9 +634,8 @@
             acc: { x: [], y: [], z: [] },
             gyro: { x: [], y: [], z: [] }
         },
-        currentAttitude: [0, 0, 0], // roll, pitch, yaw in rad
-        currentMatrix: [1,0,0, 0,1,0, 0,0,1],
-        lastMotionTime: performance.now()
+        currentAttitude: [0, 0, 0],
+        currentMatrix: [1,0,0, 0,1,0, 0,0,1]
     };
 
     const G_CONST = 9.80665;
@@ -668,183 +650,119 @@
         return `${h}:${m}:${s}.${ms}`;
     }
 
-    // ============================================================
-    //  Sensor Authorization & Listeners (W3C Motion API)
-    // ============================================================
-    function showPermissionBanner() {
-        document.getElementById('permissionBanner').classList.add('show');
-    }
-
-    function hidePermissionBanner() {
-        document.getElementById('permissionBanner').classList.remove('show');
-    }
-
-    async function requestSensorAccess() {
-        hidePermissionBanner();
-
-        // 1. iOS 13+ DeviceMotionEvent permission request
-        if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
-            try {
-                const response = await DeviceMotionEvent.requestPermission();
-                if (response === 'granted') {
-                    if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-                        await DeviceOrientationEvent.requestPermission().catch(() => {});
-                    }
-                    startSensors();
-                } else {
-                    alert('Sensor access permission was denied by user.');
-                }
-            } catch (err) {
-                console.error(err);
-                startSensors();
-            }
-        } else {
-            // Android / Standard Browsers
-            startSensors();
+    function sendNativeMessage(action, payload) {
+        if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.nativeBridge) {
+            window.webkit.messageHandlers.nativeBridge.postMessage({ action, payload });
         }
     }
 
-    function startSensors() {
-        if (state.active) return;
-        state.active = true;
+    // ============================================================
+    //  Source Switcher (Earphones <-> Phone)
+    // ============================================================
+    function setSource(source) {
+        state.currentSource = source;
 
-        window.addEventListener('devicemotion', handleDeviceMotion, true);
-        window.addEventListener('deviceorientation', handleDeviceOrientation, true);
+        document.getElementById('srcEarphones').classList.toggle('active', source === 'earphones');
+        document.getElementById('srcPhone').classList.toggle('active', source === 'phone');
 
-        updateStatus(true);
-        hidePermissionBanner();
+        const label = document.getElementById('statusLabel');
+        const dot = document.getElementById('statusDot');
+
+        if (source === 'earphones') {
+            label.textContent = 'Earphones Active';
+            label.style.color = '#00d264';
+            dot.className = 'dot';
+        } else {
+            label.textContent = 'Phone Motion Active';
+            label.style.color = '#00d264';
+            dot.className = 'dot';
+        }
+
+        sendNativeMessage('setSource', { source });
     }
 
-    function handleDeviceOrientation(event) {
-        // alpha (yaw 0..360), beta (pitch -180..180), gamma (roll -90..90) in deg
-        const alpha = (event.alpha || 0) * DEG_TO_RAD;
-        const beta  = (event.beta  || 0) * DEG_TO_RAD;
-        const gamma = (event.gamma || 0) * DEG_TO_RAD;
+    function onNativeSourceStatus(source, available, message) {
+        const label = document.getElementById('statusLabel');
+        const dot = document.getElementById('statusDot');
 
-        state.currentAttitude = [gamma, beta, alpha]; // [roll, pitch, yaw]
+        if (state.recording) return;
 
-        updateValue('attRoll', gamma);
-        updateValue('attPitch', beta);
-        updateValue('attYaw', alpha);
-
-        // Compute 3x3 Rotation Matrix from Euler angles (ZYX / Z-X-Y convention)
-        const cA = Math.cos(alpha), sA = Math.sin(alpha);
-        const cB = Math.cos(beta),  sB = Math.sin(beta);
-        const cG = Math.cos(gamma), sG = Math.sin(gamma);
-
-        const m11 = cA * cG - sA * sB * sG;
-        const m12 = -cB * sA;
-        const m13 = cA * sG + cG * sA * sB;
-
-        const m21 = cG * sA + cA * sB * sG;
-        const m22 = cA * cB;
-        const m23 = sA * sG - cA * cG * sB;
-
-        const m31 = -cB * sG;
-        const m32 = sB;
-        const m33 = cB * cG;
-
-        state.currentMatrix = [m11, m12, m13, m21, m22, m23, m31, m32, m33];
-
-        updateValue('m11', m11); updateValue('m12', m12); updateValue('m13', m13);
-        updateValue('m21', m21); updateValue('m22', m22); updateValue('m23', m23);
-        updateValue('m31', m31); updateValue('m32', m32); updateValue('m33', m33);
+        label.textContent = message;
+        if (available) {
+            dot.className = 'dot';
+            label.style.color = '#00d264';
+        } else {
+            dot.className = 'dot warning';
+            label.style.color = '#ffd43b';
+        }
     }
 
-    function handleDeviceMotion(event) {
+    // ============================================================
+    //  Sensor Telemetry Feeder
+    // ============================================================
+    function feedMotionData(ax, ay, az, gx, gy, gz, fromSource) {
+        if (fromSource && fromSource !== state.currentSource) return;
+
         state.sampleCount++;
 
-        // Linear Acceleration (excluding gravity, in m/s^2 -> converted to G)
-        const acc = event.acceleration || {};
-        const accX = (acc.x || 0) / G_CONST;
-        const accY = (acc.y || 0) / G_CONST;
-        const accZ = (acc.z || 0) / G_CONST;
+        updateValue('accX', ax); updateValue('accY', ay); updateValue('accZ', az);
+        updateValue('gyroX', gx); updateValue('gyroY', gy); updateValue('gyroZ', gz);
 
-        // Rotation Rate (in deg/s -> converted to rad/s)
-        const rot = event.rotationRate || {};
-        const gyroX = (rot.beta  || 0) * DEG_TO_RAD; // pitch rate
-        const gyroY = (rot.gamma || 0) * DEG_TO_RAD; // roll rate
-        const gyroZ = (rot.alpha || 0) * DEG_TO_RAD; // yaw rate
-
-        updateValue('accX', accX);
-        updateValue('accY', accY);
-        updateValue('accZ', accZ);
-
-        updateValue('gyroX', gyroX);
-        updateValue('gyroY', gyroY);
-        updateValue('gyroZ', gyroZ);
-
-        // Sampling Rate
         const now = performance.now();
         state.sampleTimestamps.push(now);
         while (state.sampleTimestamps.length > 100) state.sampleTimestamps.shift();
         if (state.sampleTimestamps.length > 1) {
             const dt = (state.sampleTimestamps[state.sampleTimestamps.length - 1] - state.sampleTimestamps[0]) / (state.sampleTimestamps.length - 1);
-            const rate = (1000 / dt).toFixed(1);
-            document.getElementById('avgSampleRate').textContent = `${rate} Hz`;
+            document.getElementById('avgSampleRate').textContent = `${(1000 / dt).toFixed(1)} Hz`;
         }
 
-        // Mag stats
-        const accMag = Math.sqrt(accX**2 + accY**2 + accZ**2);
-        const gyroMag = Math.sqrt(gyroX**2 + gyroY**2 + gyroZ**2);
+        const accMag = Math.sqrt(ax**2 + ay**2 + az**2);
+        const gyroMag = Math.sqrt(gx**2 + gy**2 + gz**2);
         state.maxAccel = Math.max(state.maxAccel, accMag);
         state.maxGyro = Math.max(state.maxGyro, gyroMag);
 
-        // Push charts
-        pushChart(state.chartData.acc, [accX, accY, accZ]);
-        pushChart(state.chartData.gyro, [gyroX, gyroY, gyroZ]);
+        pushChart(state.chartData.acc, [ax, ay, az]);
+        pushChart(state.chartData.gyro, [gx, gy, gz]);
 
-        // Sample storage if recording
         if (state.recording) {
-            const sample = {
+            state.samples.push({
                 timestamp: formatTime(new Date()),
-                userAcceleration: [accX, accY, accZ],
-                rotationRate: [gyroX, gyroY, gyroZ],
+                source: state.currentSource,
+                userAcceleration: [ax, ay, az],
+                rotationRate: [gx, gy, gz],
                 rotationMatrix: [...state.currentMatrix],
-                gravity: [
-                    ((event.accelerationIncludingGravity?.x || 0) - (acc.x || 0)) / G_CONST,
-                    ((event.accelerationIncludingGravity?.y || 0) - (acc.y || 0)) / G_CONST,
-                    ((event.accelerationIncludingGravity?.z || 0) - (acc.z || 0)) / G_CONST
-                ],
                 attitude: [...state.currentAttitude]
-            };
-            state.samples.push(sample);
+            });
             updateRecordingStats();
+        }
+    }
+
+    function feedOrientationData(roll, pitch, yaw, matrix, fromSource) {
+        if (fromSource && fromSource !== state.currentSource) return;
+
+        state.currentAttitude = [roll, pitch, yaw];
+        updateValue('attRoll', roll);
+        updateValue('attPitch', pitch);
+        updateValue('attYaw', yaw);
+
+        if (matrix && matrix.length === 9) {
+            state.currentMatrix = matrix;
+            for (let i = 0; i < 9; i++) {
+                const r = Math.floor(i / 3) + 1, c = (i % 3) + 1;
+                updateValue(`m${r}${c}`, matrix[i]);
+            }
         }
     }
 
     function updateValue(id, val) {
         const el = document.getElementById(id);
-        if (el) el.textContent = val.toFixed(3);
+        if (el) el.textContent = Number(val).toFixed(3);
     }
 
     function pushChart(target, vals) {
-        target.x.push(vals[0]);
-        target.y.push(vals[1]);
-        target.z.push(vals[2]);
+        target.x.push(vals[0]); target.y.push(vals[1]); target.z.push(vals[2]);
         if (target.x.length > CHART_MAX_POINTS) {
-            target.x.shift();
-            target.y.shift();
-            target.z.shift();
-        }
-    }
-
-    function updateStatus(active) {
-        const dot = document.getElementById('statusDot');
-        const label = document.getElementById('statusLabel');
-
-        dot.className = 'dot';
-        if (state.recording) {
-            dot.classList.add('recording');
-            label.textContent = 'Recording';
-            label.style.color = '#ff4444';
-        } else if (active) {
-            dot.classList.add('connected');
-            label.textContent = 'Streaming';
-            label.style.color = '#00d264';
-        } else {
-            label.textContent = 'Standby';
-            label.style.color = '#8e8ea0';
+            target.x.shift(); target.y.shift(); target.z.shift();
         }
     }
 
@@ -865,15 +783,11 @@
         const w = rect.width, h = rect.height;
         ctx.clearRect(0, 0, w, h);
 
-        // Grid
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
         ctx.lineWidth = 1;
         for (let i = 0; i <= 4; i++) {
             const y = (h / 4) * i;
-            ctx.beginPath();
-            ctx.moveTo(0, y);
-            ctx.lineTo(w, y);
-            ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
         }
 
         if (data.x.length < 2) return;
@@ -883,14 +797,10 @@
         const range = max - min || 1;
         min -= range * 0.15; max += range * 0.15;
 
-        // Zero line
         const zeroY = h - (0 - min) / (max - min) * h;
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
         ctx.setLineDash([4, 4]);
-        ctx.beginPath();
-        ctx.moveTo(0, zeroY);
-        ctx.lineTo(w, zeroY);
-        ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(0, zeroY); ctx.lineTo(w, zeroY); ctx.stroke();
         ctx.setLineDash([]);
 
         const channels = [
@@ -911,16 +821,15 @@
             ctx.stroke();
         });
 
-        // Legends
         ctx.font = '10px monospace';
         channels.forEach((ch, i) => {
             ctx.fillStyle = ch.c;
-            ctx.fillText(ch.label, 10 + i * 28, 14);
+            ctx.fillText(ch.label, 8 + i * 26, 12);
         });
 
         ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
-        ctx.fillText(max.toFixed(2), w - 50, 12);
-        ctx.fillText(min.toFixed(2), w - 50, h - 4);
+        ctx.fillText(max.toFixed(2), w - 46, 12);
+        ctx.fillText(min.toFixed(2), w - 46, h - 4);
     }
 
     function renderLoop() {
@@ -933,28 +842,30 @@
     //  Recording
     // ============================================================
     function toggleRecording() {
-        if (!state.active) {
-            requestSensorAccess();
-            return;
-        }
-
         state.recording = !state.recording;
         const btn = document.getElementById('btnRecord');
+        const dot = document.getElementById('statusDot');
+        const label = document.getElementById('statusLabel');
 
         if (state.recording) {
             state.samples = [];
             state.recordStartTime = Date.now();
-            state.maxAccel = 0;
-            state.maxGyro = 0;
-            btn.textContent = '⏹ Stop';
-            btn.className = 'btn btn-danger';
-            updateStatus(true);
+            state.maxAccel = 0; state.maxGyro = 0;
+            btn.innerHTML = '<span>⏹ Stop</span>';
+            btn.classList.add('recording');
+            dot.className = 'dot recording';
+            label.textContent = `Recording (${state.currentSource})`;
+            label.style.color = '#ff4444';
             document.getElementById('btnExport').disabled = true;
+            sendNativeMessage('startRecording', { source: state.currentSource });
         } else {
-            btn.textContent = '⏺ Start';
-            btn.className = 'btn btn-primary';
-            updateStatus(true);
+            btn.innerHTML = '<span>⏺ Record</span>';
+            btn.classList.remove('recording');
+            dot.className = 'dot';
+            label.textContent = `${state.currentSource === 'earphones' ? 'Earphones' : 'Phone'} Active`;
+            label.style.color = '#00d264';
             document.getElementById('btnExport').disabled = state.samples.length === 0;
+            sendNativeMessage('stopRecording', { source: state.currentSource, sampleCount: state.samples.length });
         }
     }
 
@@ -969,12 +880,10 @@
         document.getElementById('recordDuration').textContent =
             `${String(min).padStart(2, '0')}:${String(sec % 60).padStart(2, '0')}.${String(ms).padStart(3, '0')}`;
         document.getElementById('totalSamples').textContent = state.samples.length;
-        document.getElementById('maxAccel').textContent = `${state.maxAccel.toFixed(3)} G`;
-        document.getElementById('maxGyro').textContent = `${state.maxGyro.toFixed(3)} rad/s`;
     }
 
     // ============================================================
-    //  Export
+    //  Export & Native Share
     // ============================================================
     function showExportModal() { document.getElementById('exportModal').classList.add('active'); }
     function hideExportModal() { document.getElementById('exportModal').classList.remove('active'); }
@@ -983,71 +892,62 @@
         const s = state.samples;
         if (s.length === 0) return;
 
+        const prefix = state.currentSource === 'earphones' ? 'earphones' : 'phone';
+        const files = {};
         if (document.getElementById('expAcc').checked) {
-            const txt = s.map(x => `${x.timestamp} ${x.userAcceleration[0].toFixed(6)} ${x.userAcceleration[1].toFixed(6)} ${x.userAcceleration[2].toFixed(6)}`).join('\n') + '\n';
-            download(txt, 'acc.txt');
+            files[`${prefix}_acc.txt`] = s.map(x => `${x.timestamp} ${x.userAcceleration[0].toFixed(6)} ${x.userAcceleration[1].toFixed(6)} ${x.userAcceleration[2].toFixed(6)}`).join('\n') + '\n';
         }
         if (document.getElementById('expGyro').checked) {
-            const txt = s.map(x => `${x.timestamp} ${x.rotationRate[0].toFixed(6)} ${x.rotationRate[1].toFixed(6)} ${x.rotationRate[2].toFixed(6)}`).join('\n') + '\n';
-            download(txt, 'rotation_rate.txt');
+            files[`${prefix}_rotation_rate.txt`] = s.map(x => `${x.timestamp} ${x.rotationRate[0].toFixed(6)} ${x.rotationRate[1].toFixed(6)} ${x.rotationRate[2].toFixed(6)}`).join('\n') + '\n';
         }
         if (document.getElementById('expMatrix').checked) {
-            const txt = s.map(x => `${x.timestamp} ${x.rotationMatrix.map(v => v.toFixed(6)).join(' ')}`).join('\n') + '\n';
-            download(txt, 'rotation_matrix.txt');
+            files[`${prefix}_rotation_matrix.txt`] = s.map(x => `${x.timestamp} ${x.rotationMatrix.map(v => v.toFixed(6)).join(' ')}`).join('\n') + '\n';
         }
         if (document.getElementById('expCSV').checked) {
-            const header = 'timestamp,acc_x,acc_y,acc_z,gyro_x,gyro_y,gyro_z,m11,m12,m13,m21,m22,m23,m31,m32,m33,grav_x,grav_y,grav_z,roll,pitch,yaw\n';
+            const header = 'timestamp,source,acc_x,acc_y,acc_z,gyro_x,gyro_y,gyro_z,m11,m12,m13,m21,m22,m23,m31,m32,m33,roll,pitch,yaw\n';
             const rows = s.map(x => [
                 x.timestamp,
+                x.source || prefix,
                 ...x.userAcceleration.map(v => v.toFixed(6)),
                 ...x.rotationRate.map(v => v.toFixed(6)),
                 ...x.rotationMatrix.map(v => v.toFixed(6)),
-                ...(x.gravity || [0,0,0]).map(v => v.toFixed(6)),
                 ...(x.attitude || [0,0,0]).map(v => v.toFixed(6))
             ].join(',')).join('\n');
-            download(header + rows, 'imu_data.csv', 'text/csv');
+            files[`${prefix}_imu_data.csv`] = header + rows;
         }
-        if (document.getElementById('expJSON').checked) {
-            download(JSON.stringify(s, null, 2), 'imu_data.json', 'application/json');
+
+        if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.nativeBridge) {
+            sendNativeMessage('shareFiles', { files });
+        } else {
+            Object.keys(files).forEach(filename => {
+                const blob = new Blob([files[filename]], { type: 'text/plain' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url; a.download = filename; a.click();
+                URL.revokeObjectURL(url);
+            });
         }
 
         hideExportModal();
     }
 
-    function download(content, filename, type = 'text/plain') {
-        const blob = new Blob([content], { type });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        a.click();
-        URL.revokeObjectURL(url);
-    }
-
     function clearData() {
         state.samples = [];
         state.sampleCount = 0;
-        state.maxAccel = 0;
-        state.maxGyro = 0;
+        state.maxAccel = 0; state.maxGyro = 0;
         state.chartData = { acc: { x: [], y: [], z: [] }, gyro: { x: [], y: [], z: [] } };
 
         document.getElementById('recordDuration').textContent = '00:00.000';
         document.getElementById('totalSamples').textContent = '0';
         document.getElementById('avgSampleRate').textContent = '-- Hz';
-        document.getElementById('maxAccel').textContent = '0.000 G';
-        document.getElementById('maxGyro').textContent = '0.000 rad/s';
     }
 
-    // Init
     requestAnimationFrame(renderLoop);
     setInterval(updateRecordingStats, 100);
 
-    // Auto-prompt permission banner on load
-    setTimeout(() => {
-        if (!state.active) {
-            showPermissionBanner();
-        }
-    }, 600);
+    window.addEventListener('DOMContentLoaded', () => {
+        setSource('earphones');
+    });
     </script>
 </body>
 </html>
