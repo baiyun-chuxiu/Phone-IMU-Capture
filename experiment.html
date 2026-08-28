@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>IMU Experiments</title>
+    <title>IMU Experiments Suite</title>
     <style>
         * {
             margin: 0;
@@ -89,11 +89,12 @@
             border-radius: 16px;
             border: 1px solid rgba(255, 255, 255, 0.06);
         }
-        .dot { width: 7px; height: 7px; min-width: 7px; border-radius: 50%; background: #00d264; box-shadow: 0 0 8px rgba(0, 210, 100, 0.6); }
+        .dot { width: 7px; height: 7px; min-width: 7px; border-radius: 50%; background: #666; transition: all 0.3s; }
+        .dot.connected { background: #00d264; box-shadow: 0 0 8px rgba(0, 210, 100, 0.6); }
         .dot.recording { background: #ff4444; box-shadow: 0 0 8px rgba(255, 68, 68, 0.8); animation: blink 0.8s infinite; }
         @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
 
-        /* Mobile Horizontal Condition Carousel */
+        /* Condition Horizontal Scroll Selector */
         .conditions-bar {
             padding: 10px 12px 0 12px;
             display: flex;
@@ -241,7 +242,7 @@
         </div>
     </header>
 
-    <!-- Condition Horizontal Scroll Selector -->
+    <!-- Condition Carousel -->
     <div class="conditions-bar" id="conditionsBar">
         <div class="cond-chip active" onclick="selectCondition('EXP01', 'Static Baseline', 'Device resting flat on surface')">
             <div class="cond-name">EXP01: Static</div>
@@ -308,14 +309,16 @@
             <span>⏺ Record</span>
         </button>
         <button id="btnExportAll" class="btn btn-action-sub" onclick="exportAllRecordings()" disabled>
-            <span>📤 Share All</span>
+            <span>📥 Download All</span>
         </button>
     </nav>
 
     <script>
     const expState = {
         currentSource: 'earphones',
-        active: true,
+        ws: null,
+        wsConnected: false,
+        phoneActive: false,
         recording: false,
         curCondId: 'EXP01',
         curCondName: 'Static Baseline',
@@ -335,30 +338,110 @@
         return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}.${String(d.getMilliseconds()).padStart(3,'0')}`;
     }
 
-    function sendNativeMessage(action, payload) {
-        if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.nativeBridge) {
-            window.webkit.messageHandlers.nativeBridge.postMessage({ action, payload });
-        }
-    }
-
     function setSource(source) {
         expState.currentSource = source;
         document.getElementById('srcEarphones').classList.toggle('active', source === 'earphones');
         document.getElementById('srcPhone').classList.toggle('active', source === 'phone');
-        document.getElementById('statusLabel').textContent = `${source === 'earphones' ? 'Earphones' : 'Phone'} Active`;
-        sendNativeMessage('setSource', { source });
+
+        if (source === 'earphones') {
+            stopPhone();
+            connectWS();
+        } else {
+            closeWS();
+            startPhone();
+        }
+        updateStatus();
     }
 
-    function feedMotionData(ax, ay, az, gx, gy, gz, fromSource) {
-        if (fromSource && fromSource !== expState.currentSource) return;
+    function updateStatus() {
+        const dot = document.getElementById('statusDot');
+        const label = document.getElementById('statusLabel');
 
+        dot.className = 'dot';
+        if (expState.recording) {
+            dot.classList.add('recording');
+            label.textContent = 'Recording';
+        } else if (expState.currentSource === 'earphones') {
+            if (expState.wsConnected) { dot.classList.add('connected'); label.textContent = 'Earphones Live'; }
+            else { label.textContent = 'Earphones Offline'; }
+        } else {
+            if (expState.phoneActive) { dot.classList.add('connected'); label.textContent = 'Phone Live'; }
+            else { label.textContent = 'Phone Standby'; }
+        }
+    }
+
+    // Earphones WS
+    function connectWS() {
+        if (expState.ws) return;
+        const wsUrl = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
+            ? `ws://${location.host}/ws`
+            : 'ws://localhost:8765/ws';
+
+        try {
+            expState.ws = new WebSocket(wsUrl);
+            expState.ws.onopen = () => { expState.wsConnected = true; updateStatus(); };
+            expState.ws.onmessage = (e) => {
+                if (expState.currentSource !== 'earphones') return;
+                try {
+                    const s = JSON.parse(e.data);
+                    if (s.type === 'status') return;
+                    handleSample(s.userAcceleration[0], s.userAcceleration[1], s.userAcceleration[2],
+                                 s.rotationRate[0], s.rotationRate[1], s.rotationRate[2],
+                                 s.attitude, s.rotationMatrix, 'earphones');
+                } catch(err){}
+            };
+            expState.ws.onclose = () => { expState.wsConnected = false; expState.ws = null; updateStatus(); };
+            expState.ws.onerror = () => { expState.wsConnected = false; updateStatus(); };
+        } catch(e){}
+    }
+
+    function closeWS() {
+        if (expState.ws) { expState.ws.close(); expState.ws = null; }
+        expState.wsConnected = false;
+    }
+
+    // Phone Sensors
+    async function startPhone() {
+        if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+            try { await DeviceMotionEvent.requestPermission(); } catch(e){}
+        }
+        expState.phoneActive = true;
+        window.addEventListener('devicemotion', onMotion, true);
+        window.addEventListener('deviceorientation', onOrient, true);
+        updateStatus();
+    }
+
+    function stopPhone() {
+        expState.phoneActive = false;
+        window.removeEventListener('devicemotion', onMotion, true);
+        window.removeEventListener('deviceorientation', onOrient, true);
+    }
+
+    function onOrient(e) {
+        if (expState.currentSource !== 'phone') return;
+        const a = (e.alpha||0)*DEG_TO_RAD, b = (e.beta||0)*DEG_TO_RAD, g = (e.gamma||0)*DEG_TO_RAD;
+        expState.currentAttitude = [g, b, a];
+    }
+
+    function onMotion(e) {
+        if (expState.currentSource !== 'phone') return;
+        const acc = e.acceleration || {}, rot = e.rotationRate || {};
+        handleSample((acc.x||0)/G_CONST, (acc.y||0)/G_CONST, (acc.z||0)/G_CONST,
+                     (rot.beta||0)*DEG_TO_RAD, (rot.gamma||0)*DEG_TO_RAD, (rot.alpha||0)*DEG_TO_RAD,
+                     expState.currentAttitude, expState.currentMatrix, 'phone');
+    }
+
+    function handleSample(ax, ay, az, gx, gy, gz, att, mat, src) {
         push(expState.chartData.acc, [ax, ay, az]);
         push(expState.chartData.gyro, [gx, gy, gz]);
+
+        if (att) expState.currentAttitude = att;
+        if (mat) expState.currentMatrix = mat;
 
         if (expState.recording) {
             expState.curSamples.push({
                 timestamp: formatTime(new Date()),
-                source: expState.currentSource,
+                source: src,
                 userAcceleration: [ax, ay, az],
                 rotationRate: [gx, gy, gz],
                 rotationMatrix: [...expState.currentMatrix],
@@ -367,25 +450,14 @@
         }
     }
 
-    function feedOrientationData(roll, pitch, yaw, matrix, fromSource) {
-        if (fromSource && fromSource !== expState.currentSource) return;
-        expState.currentAttitude = [roll, pitch, yaw];
-        if (matrix && matrix.length === 9) expState.currentMatrix = matrix;
-    }
-
     function push(d, arr) {
         d.x.push(arr[0]); d.y.push(arr[1]); d.z.push(arr[2]);
         if (d.x.length > 200) { d.x.shift(); d.y.shift(); d.z.shift(); }
     }
 
     function selectCondition(id, name, desc) {
-        if (expState.recording) {
-            alert('Please stop recording first.');
-            return;
-        }
-        expState.curCondId = id;
-        expState.curCondName = name;
-        expState.curCondDesc = desc;
+        if (expState.recording) { alert('Please stop recording first.'); return; }
+        expState.curCondId = id; expState.curCondName = name; expState.curCondDesc = desc;
 
         document.querySelectorAll('.cond-chip').forEach(b => b.classList.remove('active'));
         event.currentTarget.classList.add('active');
@@ -403,17 +475,12 @@
             expState.recordStartTime = Date.now();
             btn.innerHTML = '<span>⏹ Stop</span>';
             btn.classList.add('recording');
-            document.getElementById('statusDot').className = 'dot recording';
-            document.getElementById('statusLabel').textContent = `Recording`;
-            document.getElementById('statusLabel').style.color = '#ff4444';
-            sendNativeMessage('startRecording', { source: expState.currentSource, condition: expState.curCondId });
+            updateStatus();
         } else {
             const duration = ((Date.now() - expState.recordStartTime) / 1000).toFixed(2);
             btn.innerHTML = '<span>⏺ Record</span>';
             btn.classList.remove('recording');
-            document.getElementById('statusDot').className = 'dot';
-            document.getElementById('statusLabel').textContent = `Active`;
-            document.getElementById('statusLabel').style.color = '#00d264';
+            updateStatus();
 
             const record = {
                 id: expState.curCondId,
@@ -431,7 +498,6 @@
 
             renderTable();
             document.getElementById('btnExportAll').disabled = false;
-            sendNativeMessage('stopRecording', { source: expState.currentSource, condition: expState.curCondId, sampleCount: record.count });
         }
     }
 
@@ -450,7 +516,7 @@
                 <td><span style="color:#00d2ff; font-weight:600;">${r.source.slice(0,3)}</span></td>
                 <td>${r.count}</td>
                 <td>${r.duration}</td>
-                <td><button class="btn btn-action-sub" style="height:26px; padding:0 8px; font-size:0.68rem;" onclick="exportSingle('${k}')">📤</button></td>
+                <td><button class="btn btn-action-sub" style="height:26px; padding:0 8px; font-size:0.68rem;" onclick="exportSingle('${k}')">📥</button></td>
             </tr>`;
         }).join('');
     }
@@ -458,30 +524,14 @@
     function exportSingle(key) {
         const r = expState.completedRecordings[key];
         if (!r) return;
-        const csv = toCSV(r.samples);
-        const filename = `${r.source}_${r.id}_${r.name.replace(/\s+/g, '_')}.csv`;
-
-        if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.nativeBridge) {
-            const files = {};
-            files[filename] = csv;
-            sendNativeMessage('shareFiles', { files });
-        } else {
-            downloadFile(csv, filename);
-        }
+        downloadFile(toCSV(r.samples), `${r.source}_${r.id}_${r.name.replace(/\s+/g, '_')}.csv`);
     }
 
     function exportAllRecordings() {
-        const files = {};
         Object.keys(expState.completedRecordings).forEach(k => {
             const r = expState.completedRecordings[k];
-            files[`${r.source}_${r.id}_${r.name.replace(/\s+/g, '_')}.csv`] = toCSV(r.samples);
+            downloadFile(toCSV(r.samples), `${r.source}_${r.id}_${r.name.replace(/\s+/g, '_')}.csv`);
         });
-
-        if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.nativeBridge) {
-            sendNativeMessage('shareFiles', { files });
-        } else {
-            Object.keys(files).forEach(name => downloadFile(files[name], name));
-        }
     }
 
     function toCSV(samples) {
@@ -549,6 +599,7 @@
         requestAnimationFrame(loop);
     }
 
+    connectWS();
     requestAnimationFrame(loop);
     </script>
 </body>

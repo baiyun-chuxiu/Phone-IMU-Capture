@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>IMU Telemetry App</title>
+    <title>IMU Telemetry Web Suite</title>
     <style>
         * {
             margin: 0;
@@ -85,7 +85,7 @@
             padding: 4px 8px;
             border-radius: 16px;
             border: 1px solid rgba(255, 255, 255, 0.06);
-            max-width: 140px;
+            max-width: 150px;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
@@ -96,20 +96,19 @@
             height: 7px;
             min-width: 7px;
             border-radius: 50%;
+            background: #666;
+            transition: all 0.3s;
+        }
+
+        .dot.connected {
             background: #00d264;
             box-shadow: 0 0 8px rgba(0, 210, 100, 0.6);
-            transition: all 0.3s;
         }
 
         .dot.recording {
             background: #ff4444;
             box-shadow: 0 0 8px rgba(255, 68, 68, 0.8);
             animation: blink 0.8s infinite;
-        }
-
-        .dot.warning {
-            background: #ffd43b;
-            box-shadow: 0 0 8px rgba(255, 212, 59, 0.6);
         }
 
         @keyframes blink {
@@ -141,7 +140,7 @@
             gap: 12px;
         }
 
-        /* Stats Bar - Mobile Optimized 2-Row Grid */
+        /* Stats Bar */
         .stats-bar {
             display: grid;
             grid-template-columns: 1.2fr 0.9fr 0.9fr;
@@ -201,7 +200,7 @@
 
         .card-unit { font-size: 0.68rem; color: #666; font-family: 'SF Mono', Menlo, monospace; }
 
-        /* Value display (X, Y, Z 3-col) */
+        /* Value display */
         .val-grid {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
@@ -426,7 +425,7 @@
             <!-- Status Dot -->
             <div class="status-dot-wrap">
                 <div id="statusDot" class="dot"></div>
-                <span id="statusLabel">Earphones Active</span>
+                <span id="statusLabel">Connecting...</span>
             </div>
             <a href="experiment.html" class="btn-exp-link">🧪 Exp</a>
         </div>
@@ -567,7 +566,7 @@
             <span>⏺ Record</span>
         </button>
         <button id="btnExport" class="btn btn-action-sub" onclick="showExportModal()" disabled>
-            <span>📤 Share</span>
+            <span>📥 Export</span>
         </button>
         <button class="btn btn-action-icon" onclick="clearData()" title="Clear Data">
             <span>🗑</span>
@@ -577,8 +576,8 @@
     <!-- Export Modal -->
     <div id="exportModal" class="modal-overlay">
         <div class="modal">
-            <div class="modal-title">📤 Share / Export Dataset</div>
-            <p class="modal-desc">Export and share recorded dataset via iOS Native Share Sheet (AirDrop, Files, Mail).</p>
+            <div class="modal-title">📥 Export Dataset</div>
+            <p class="modal-desc">Select formats to download. Text files match standard sensor recording format.</p>
             <div class="export-options">
                 <label class="export-opt">
                     <input type="checkbox" id="expAcc" checked>
@@ -611,7 +610,7 @@
             </div>
             <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px;">
                 <button class="btn btn-action-sub" style="height:36px; padding:0 14px;" onclick="hideExportModal()">Cancel</button>
-                <button class="btn btn-record-main" style="height:36px; padding:0 18px; flex:none;" onclick="exportData()">Confirm & Share</button>
+                <button class="btn btn-record-main" style="height:36px; padding:0 18px; flex:none;" onclick="exportData()">Download</button>
             </div>
         </div>
     </div>
@@ -621,8 +620,10 @@
     //  State Management
     // ============================================================
     const state = {
-        currentSource: 'earphones',
-        active: true,
+        currentSource: 'earphones', // 'earphones' | 'phone'
+        ws: null,
+        wsConnected: false,
+        phoneMotionActive: false,
         recording: false,
         recordStartTime: null,
         samples: [],
@@ -635,7 +636,8 @@
             gyro: { x: [], y: [], z: [] }
         },
         currentAttitude: [0, 0, 0],
-        currentMatrix: [1,0,0, 0,1,0, 0,0,1]
+        currentMatrix: [1,0,0, 0,1,0, 0,0,1],
+        reconnectTimer: null
     };
 
     const G_CONST = 9.80665;
@@ -650,84 +652,175 @@
         return `${h}:${m}:${s}.${ms}`;
     }
 
-    function sendNativeMessage(action, payload) {
-        if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.nativeBridge) {
-            window.webkit.messageHandlers.nativeBridge.postMessage({ action, payload });
+    // Silent Audio Keepalive (Web Audio API)
+    let audioCtx = null;
+    function initSilentAudio() {
+        if (!audioCtx) {
+            try {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                gain.gain.value = 0.0001;
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start();
+            } catch (e) {}
         }
     }
 
     // ============================================================
-    //  Source Switcher (Earphones <-> Phone)
+    //  Dual Source Switcher (Earphones <-> Phone)
     // ============================================================
     function setSource(source) {
         state.currentSource = source;
-
         document.getElementById('srcEarphones').classList.toggle('active', source === 'earphones');
         document.getElementById('srcPhone').classList.toggle('active', source === 'phone');
 
-        const label = document.getElementById('statusLabel');
-        const dot = document.getElementById('statusDot');
-
         if (source === 'earphones') {
-            label.textContent = 'Earphones Active';
-            label.style.color = '#00d264';
-            dot.className = 'dot';
+            stopPhoneSensors();
+            connectWebSocket();
+            updateStatus();
         } else {
-            label.textContent = 'Phone Motion Active';
-            label.style.color = '#00d264';
-            dot.className = 'dot';
+            closeWebSocket();
+            startPhoneSensors();
+            updateStatus();
         }
-
-        sendNativeMessage('setSource', { source });
     }
 
-    function onNativeSourceStatus(source, available, message) {
-        const label = document.getElementById('statusLabel');
+    function updateStatus() {
         const dot = document.getElementById('statusDot');
+        const label = document.getElementById('statusLabel');
 
-        if (state.recording) return;
-
-        label.textContent = message;
-        if (available) {
-            dot.className = 'dot';
-            label.style.color = '#00d264';
+        dot.className = 'dot';
+        if (state.recording) {
+            dot.classList.add('recording');
+            label.textContent = `Recording (${state.currentSource === 'earphones' ? 'Ear' : 'Phone'})`;
+            label.style.color = '#ff4444';
+        } else if (state.currentSource === 'earphones') {
+            if (state.wsConnected) {
+                dot.classList.add('connected');
+                label.textContent = 'Earphones Live';
+                label.style.color = '#00d264';
+            } else {
+                label.textContent = 'Earphones Offline';
+                label.style.color = '#8e8ea0';
+            }
         } else {
-            dot.className = 'dot warning';
-            label.style.color = '#ffd43b';
+            if (state.phoneMotionActive) {
+                dot.classList.add('connected');
+                label.textContent = 'Phone Motion Live';
+                label.style.color = '#00d264';
+            } else {
+                label.textContent = 'Phone Standby';
+                label.style.color = '#8e8ea0';
+            }
         }
     }
 
     // ============================================================
-    //  Sensor Telemetry Feeder
+    //  Earphones WebSocket Streamer
     // ============================================================
-    function feedMotionData(ax, ay, az, gx, gy, gz, fromSource) {
-        if (fromSource && fromSource !== state.currentSource) return;
+    function connectWebSocket() {
+        if (state.ws && (state.ws.readyState === WebSocket.OPEN || state.ws.readyState === WebSocket.CONNECTING)) {
+            return;
+        }
 
+        initSilentAudio();
+
+        const wsUrl = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
+            ? `ws://${location.host}/ws`
+            : 'ws://localhost:8765/ws';
+
+        try {
+            state.ws = new WebSocket(wsUrl);
+        } catch (e) {
+            scheduleReconnect();
+            return;
+        }
+
+        state.ws.onopen = () => {
+            state.wsConnected = true;
+            updateStatus();
+        };
+
+        state.ws.onmessage = (event) => {
+            if (state.currentSource !== 'earphones') return;
+            try {
+                const sample = JSON.parse(event.data);
+                if (sample.type === 'status') return;
+                handleEarphonesData(sample);
+            } catch (e) {}
+        };
+
+        state.ws.onclose = () => {
+            state.wsConnected = false;
+            updateStatus();
+            if (state.currentSource === 'earphones') scheduleReconnect();
+        };
+
+        state.ws.onerror = () => {
+            state.wsConnected = false;
+            updateStatus();
+        };
+    }
+
+    function closeWebSocket() {
+        if (state.reconnectTimer) {
+            clearTimeout(state.reconnectTimer);
+            state.reconnectTimer = null;
+        }
+        if (state.ws) {
+            state.ws.close();
+            state.ws = null;
+        }
+        state.wsConnected = false;
+    }
+
+    function scheduleReconnect() {
+        if (state.reconnectTimer || state.currentSource !== 'earphones') return;
+        state.reconnectTimer = setTimeout(() => {
+            state.reconnectTimer = null;
+            if (state.currentSource === 'earphones') connectWebSocket();
+        }, 1500);
+    }
+
+    function handleEarphonesData(sample) {
         state.sampleCount++;
+
+        const ax = sample.userAcceleration[0];
+        const ay = sample.userAcceleration[1];
+        const az = sample.userAcceleration[2];
+        const gx = sample.rotationRate[0];
+        const gy = sample.rotationRate[1];
+        const gz = sample.rotationRate[2];
 
         updateValue('accX', ax); updateValue('accY', ay); updateValue('accZ', az);
         updateValue('gyroX', gx); updateValue('gyroY', gy); updateValue('gyroZ', gz);
 
-        const now = performance.now();
-        state.sampleTimestamps.push(now);
-        while (state.sampleTimestamps.length > 100) state.sampleTimestamps.shift();
-        if (state.sampleTimestamps.length > 1) {
-            const dt = (state.sampleTimestamps[state.sampleTimestamps.length - 1] - state.sampleTimestamps[0]) / (state.sampleTimestamps.length - 1);
-            document.getElementById('avgSampleRate').textContent = `${(1000 / dt).toFixed(1)} Hz`;
+        if (sample.attitude) {
+            state.currentAttitude = [sample.attitude[0], sample.attitude[1], sample.attitude[2]];
+            updateValue('attRoll', sample.attitude[0]);
+            updateValue('attPitch', sample.attitude[1]);
+            updateValue('attYaw', sample.attitude[2]);
         }
 
-        const accMag = Math.sqrt(ax**2 + ay**2 + az**2);
-        const gyroMag = Math.sqrt(gx**2 + gy**2 + gz**2);
-        state.maxAccel = Math.max(state.maxAccel, accMag);
-        state.maxGyro = Math.max(state.maxGyro, gyroMag);
+        const m = sample.rotationMatrix;
+        if (m && m.length === 9) {
+            state.currentMatrix = m;
+            for (let i = 0; i < 9; i++) {
+                const r = Math.floor(i / 3) + 1, c = (i % 3) + 1;
+                updateValue(`m${r}${c}`, m[i]);
+            }
+        }
 
+        calcSampleRate();
         pushChart(state.chartData.acc, [ax, ay, az]);
         pushChart(state.chartData.gyro, [gx, gy, gz]);
 
         if (state.recording) {
             state.samples.push({
-                timestamp: formatTime(new Date()),
-                source: state.currentSource,
+                timestamp: sample.timestamp || formatTime(new Date()),
+                source: 'earphones',
                 userAcceleration: [ax, ay, az],
                 rotationRate: [gx, gy, gz],
                 rotationMatrix: [...state.currentMatrix],
@@ -737,20 +830,109 @@
         }
     }
 
-    function feedOrientationData(roll, pitch, yaw, matrix, fromSource) {
-        if (fromSource && fromSource !== state.currentSource) return;
-
-        state.currentAttitude = [roll, pitch, yaw];
-        updateValue('attRoll', roll);
-        updateValue('attPitch', pitch);
-        updateValue('attYaw', yaw);
-
-        if (matrix && matrix.length === 9) {
-            state.currentMatrix = matrix;
-            for (let i = 0; i < 9; i++) {
-                const r = Math.floor(i / 3) + 1, c = (i % 3) + 1;
-                updateValue(`m${r}${c}`, matrix[i]);
+    // ============================================================
+    //  Phone IMU Sensors (W3C Motion API)
+    // ============================================================
+    async function startPhoneSensors() {
+        if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+            try {
+                const res = await DeviceMotionEvent.requestPermission();
+                if (res === 'granted') {
+                    if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+                        await DeviceOrientationEvent.requestPermission().catch(() => {});
+                    }
+                    attachPhoneListeners();
+                }
+            } catch (e) {
+                attachPhoneListeners();
             }
+        } else {
+            attachPhoneListeners();
+        }
+    }
+
+    function attachPhoneListeners() {
+        state.phoneMotionActive = true;
+        window.addEventListener('devicemotion', handlePhoneMotion, true);
+        window.addEventListener('deviceorientation', handlePhoneOrientation, true);
+        updateStatus();
+    }
+
+    function stopPhoneSensors() {
+        state.phoneMotionActive = false;
+        window.removeEventListener('devicemotion', handlePhoneMotion, true);
+        window.removeEventListener('deviceorientation', handlePhoneOrientation, true);
+    }
+
+    function handlePhoneOrientation(event) {
+        if (state.currentSource !== 'phone') return;
+
+        const a = (event.alpha || 0) * DEG_TO_RAD;
+        const b = (event.beta  || 0) * DEG_TO_RAD;
+        const g = (event.gamma || 0) * DEG_TO_RAD;
+
+        state.currentAttitude = [g, b, a];
+        updateValue('attRoll', g);
+        updateValue('attPitch', b);
+        updateValue('attYaw', a);
+
+        const cA = Math.cos(a), sA = Math.sin(a);
+        const cB = Math.cos(b), sB = Math.sin(b);
+        const cG = Math.cos(g), sG = Math.sin(g);
+
+        const m = [
+            cA*cG - sA*sB*sG, -cB*sA, cA*sG + cG*sA*sB,
+            cG*sA + cA*sB*sG,  cA*cB, sA*sG - cA*cG*sB,
+            -cB*sG,           sB,     cB*cG
+        ];
+        state.currentMatrix = m;
+
+        for (let i = 0; i < 9; i++) {
+            const r = Math.floor(i / 3) + 1, c = (i % 3) + 1;
+            updateValue(`m${r}${c}`, m[i]);
+        }
+    }
+
+    function handlePhoneMotion(event) {
+        if (state.currentSource !== 'phone') return;
+        state.sampleCount++;
+
+        const acc = event.acceleration || {};
+        const rot = event.rotationRate || {};
+        const ax = (acc.x || 0) / G_CONST;
+        const ay = (acc.y || 0) / G_CONST;
+        const az = (acc.z || 0) / G_CONST;
+        const gx = (rot.beta  || 0) * DEG_TO_RAD;
+        const gy = (rot.gamma || 0) * DEG_TO_RAD;
+        const gz = (rot.alpha || 0) * DEG_TO_RAD;
+
+        updateValue('accX', ax); updateValue('accY', ay); updateValue('accZ', az);
+        updateValue('gyroX', gx); updateValue('gyroY', gy); updateValue('gyroZ', gz);
+
+        calcSampleRate();
+        pushChart(state.chartData.acc, [ax, ay, az]);
+        pushChart(state.chartData.gyro, [gx, gy, gz]);
+
+        if (state.recording) {
+            state.samples.push({
+                timestamp: formatTime(new Date()),
+                source: 'phone',
+                userAcceleration: [ax, ay, az],
+                rotationRate: [gx, gy, gz],
+                rotationMatrix: [...state.currentMatrix],
+                attitude: [...state.currentAttitude]
+            });
+            updateRecordingStats();
+        }
+    }
+
+    function calcSampleRate() {
+        const now = performance.now();
+        state.sampleTimestamps.push(now);
+        while (state.sampleTimestamps.length > 100) state.sampleTimestamps.shift();
+        if (state.sampleTimestamps.length > 1) {
+            const dt = (state.sampleTimestamps[state.sampleTimestamps.length - 1] - state.sampleTimestamps[0]) / (state.sampleTimestamps.length - 1);
+            document.getElementById('avgSampleRate').textContent = `${(1000 / dt).toFixed(1)} Hz`;
         }
     }
 
@@ -844,34 +1026,24 @@
     function toggleRecording() {
         state.recording = !state.recording;
         const btn = document.getElementById('btnRecord');
-        const dot = document.getElementById('statusDot');
-        const label = document.getElementById('statusLabel');
 
         if (state.recording) {
             state.samples = [];
             state.recordStartTime = Date.now();
-            state.maxAccel = 0; state.maxGyro = 0;
             btn.innerHTML = '<span>⏹ Stop</span>';
             btn.classList.add('recording');
-            dot.className = 'dot recording';
-            label.textContent = `Recording (${state.currentSource})`;
-            label.style.color = '#ff4444';
             document.getElementById('btnExport').disabled = true;
-            sendNativeMessage('startRecording', { source: state.currentSource });
+            updateStatus();
         } else {
             btn.innerHTML = '<span>⏺ Record</span>';
             btn.classList.remove('recording');
-            dot.className = 'dot';
-            label.textContent = `${state.currentSource === 'earphones' ? 'Earphones' : 'Phone'} Active`;
-            label.style.color = '#00d264';
             document.getElementById('btnExport').disabled = state.samples.length === 0;
-            sendNativeMessage('stopRecording', { source: state.currentSource, sampleCount: state.samples.length });
+            updateStatus();
         }
     }
 
     function updateRecordingStats() {
         if (!state.recording || !state.recordStartTime) return;
-
         const elapsed = Date.now() - state.recordStartTime;
         const sec = Math.floor(elapsed / 1000);
         const ms = elapsed % 1000;
@@ -883,7 +1055,7 @@
     }
 
     // ============================================================
-    //  Export & Native Share
+    //  Export
     // ============================================================
     function showExportModal() { document.getElementById('exportModal').classList.add('active'); }
     function hideExportModal() { document.getElementById('exportModal').classList.remove('active'); }
@@ -893,15 +1065,18 @@
         if (s.length === 0) return;
 
         const prefix = state.currentSource === 'earphones' ? 'earphones' : 'phone';
-        const files = {};
+
         if (document.getElementById('expAcc').checked) {
-            files[`${prefix}_acc.txt`] = s.map(x => `${x.timestamp} ${x.userAcceleration[0].toFixed(6)} ${x.userAcceleration[1].toFixed(6)} ${x.userAcceleration[2].toFixed(6)}`).join('\n') + '\n';
+            const txt = s.map(x => `${x.timestamp} ${x.userAcceleration[0].toFixed(6)} ${x.userAcceleration[1].toFixed(6)} ${x.userAcceleration[2].toFixed(6)}`).join('\n') + '\n';
+            download(txt, `${prefix}_acc.txt`);
         }
         if (document.getElementById('expGyro').checked) {
-            files[`${prefix}_rotation_rate.txt`] = s.map(x => `${x.timestamp} ${x.rotationRate[0].toFixed(6)} ${x.rotationRate[1].toFixed(6)} ${x.rotationRate[2].toFixed(6)}`).join('\n') + '\n';
+            const txt = s.map(x => `${x.timestamp} ${x.rotationRate[0].toFixed(6)} ${x.rotationRate[1].toFixed(6)} ${x.rotationRate[2].toFixed(6)}`).join('\n') + '\n';
+            download(txt, `${prefix}_rotation_rate.txt`);
         }
         if (document.getElementById('expMatrix').checked) {
-            files[`${prefix}_rotation_matrix.txt`] = s.map(x => `${x.timestamp} ${x.rotationMatrix.map(v => v.toFixed(6)).join(' ')}`).join('\n') + '\n';
+            const txt = s.map(x => `${x.timestamp} ${x.rotationMatrix.map(v => v.toFixed(6)).join(' ')}`).join('\n') + '\n';
+            download(txt, `${prefix}_rotation_matrix.txt`);
         }
         if (document.getElementById('expCSV').checked) {
             const header = 'timestamp,source,acc_x,acc_y,acc_z,gyro_x,gyro_y,gyro_z,m11,m12,m13,m21,m22,m23,m31,m32,m33,roll,pitch,yaw\n';
@@ -913,28 +1088,23 @@
                 ...x.rotationMatrix.map(v => v.toFixed(6)),
                 ...(x.attitude || [0,0,0]).map(v => v.toFixed(6))
             ].join(',')).join('\n');
-            files[`${prefix}_imu_data.csv`] = header + rows;
-        }
-
-        if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.nativeBridge) {
-            sendNativeMessage('shareFiles', { files });
-        } else {
-            Object.keys(files).forEach(filename => {
-                const blob = new Blob([files[filename]], { type: 'text/plain' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url; a.download = filename; a.click();
-                URL.revokeObjectURL(url);
-            });
+            download(header + rows, `${prefix}_imu_data.csv`, 'text/csv');
         }
 
         hideExportModal();
     }
 
+    function download(content, filename, type = 'text/plain') {
+        const blob = new Blob([content], { type });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = filename; a.click();
+        URL.revokeObjectURL(url);
+    }
+
     function clearData() {
         state.samples = [];
         state.sampleCount = 0;
-        state.maxAccel = 0; state.maxGyro = 0;
         state.chartData = { acc: { x: [], y: [], z: [] }, gyro: { x: [], y: [], z: [] } };
 
         document.getElementById('recordDuration').textContent = '00:00.000';
@@ -942,12 +1112,11 @@
         document.getElementById('avgSampleRate').textContent = '-- Hz';
     }
 
+    // Init
+    window.addEventListener('click', () => initSilentAudio(), { once: true });
+    connectWebSocket();
     requestAnimationFrame(renderLoop);
     setInterval(updateRecordingStats, 100);
-
-    window.addEventListener('DOMContentLoaded', () => {
-        setSource('earphones');
-    });
     </script>
 </body>
 </html>
